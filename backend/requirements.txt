@@ -1,0 +1,8 @@
+﻿fastapi
+uvicorn[standard]
+langgraph
+sqlalchemy
+pydantic
+pydantic-settings
+alembic
+redis
