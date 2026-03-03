@@ -1,8 +1,10 @@
 ﻿fastapi
 uvicorn[standard]
-langgraph
-sqlalchemy
-pydantic
+sqlalchemy[asyncio]
+aiomysql
 pydantic-settings
-alembic
 redis
+python-jose[cryptography]
+httpx
+langgraph
+langchain-core

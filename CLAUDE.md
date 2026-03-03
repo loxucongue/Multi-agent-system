@@ -221,7 +221,12 @@ travel-advisor/
 - `cd frontend && npm run build`
 
 ### 基础设施
-- `docker-compose up -d` 启动 MySQL + Redis
+- 本地安装模式（不依赖 Docker Desktop）：MySQL + Memurai
+- `Start-Service MySQL80` 启动 MySQL 服务
+- `Start-Service Memurai` 启动 Memurai 服务
+- `mysqladmin -h 127.0.0.1 -P 3306 -u root -p ping` 检查 MySQL 连通性
+- `memurai-cli ping` 或 `& "C:\Program Files\Memurai\memurai-cli.exe" ping` 检查 Redis 连通性（预期 `PONG`）
+- 本地数据库连接参数：`127.0.0.1:3306`，数据库 `travel_db`，数据表 `travel`，字符集 `utf8mb4`
 
 ---
 
