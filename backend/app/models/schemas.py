@@ -195,11 +195,24 @@ class ExternalInfoResult(BaseModel):
 # ─────────────────────────────────────────────
 
 
+class UserProfile(BaseModel):
+    """此模型定义了 user_profile 字典的标准字段，所有节点应按此命名。"""
+
+    origin_city: str | None = None
+    destinations: list[str] = Field(default_factory=list)
+    depart_date_range: str | None = None
+    days_range: str | None = None
+    people: str | None = None
+    budget_range: str | None = None
+    style_prefs: list[str] = Field(default_factory=list)
+
+
 class SessionState(BaseModel):
     """会话状态 JSON。"""
 
     stage: str = "init"
     lead_status: str = "none"
+    lead_phone: str | None = None
     active_route_id: int | None = None
     candidate_route_ids: list[int] = Field(default_factory=list)
     excluded_route_ids: list[int] = Field(default_factory=list)
