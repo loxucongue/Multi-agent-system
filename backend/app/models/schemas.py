@@ -211,6 +211,46 @@ class SessionState(BaseModel):
 
 
 # ─────────────────────────────────────────────
+#  Lead schemas
+# ─────────────────────────────────────────────
+
+
+class LeadCreate(BaseModel):
+    """Lead create request payload."""
+
+    session_id: str
+    phone: str
+
+
+class LeadResponse(BaseModel):
+    """Lead submission response payload."""
+
+    success: bool
+    message: str
+    phone_masked: str
+
+
+class LeadInfo(BaseModel):
+    """Lead detail for user/admin display."""
+
+    id: int
+    session_id: str
+    phone_masked: str
+    source: str
+    active_route_id: int | None = None
+    status: str
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LeadListResponse(BaseModel):
+    """Paginated lead list response."""
+
+    leads: list[LeadInfo] = Field(default_factory=list)
+    total: int
+
+
+# ─────────────────────────────────────────────
 #  Route schemas
 # ─────────────────────────────────────────────
 
