@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
+from urllib.parse import urlparse
 
 from app.config.settings import Settings
 from app.models.schemas import (
@@ -186,12 +188,67 @@ class WorkflowService:
             doc_id = item.get("documentId") or item.get("document_id")
             output_text = item.get("output", "")
             if doc_id:
-                candidates.append(RouteCandidate(document_id=str(doc_id), output=str(output_text)))
+                route_id = self._extract_route_id(item, str(output_text))
+                if route_id is None:
+                    self._logger.warning(
+                        f"route_id not found in route candidate output, document_id={doc_id}"
+                    )
+                candidates.append(
+                    RouteCandidate(
+                        document_id=str(doc_id),
+                        route_id=route_id,
+                        output=str(output_text),
+                    )
+                )
 
         if not candidates:
             self._logger.warning("route search parsed 0 valid candidates")
 
         return candidates
+
+    def _extract_route_id(self, item: dict[str, Any], output_text: str) -> str | None:
+        """Extract route id from workflow item fields or output text."""
+
+        direct_route_id = item.get("route_id") or item.get("routeId")
+        if direct_route_id:
+            return str(direct_route_id)
+
+        file_url_id = item.get("file_url_id") or item.get("fileUrlId")
+        if isinstance(file_url_id, str):
+            route_id_from_url = self._extract_route_id_from_url(file_url_id)
+            if route_id_from_url:
+                return route_id_from_url
+
+        route_id_match = re.search(r"route_id\s*[:：]\s*([A-Za-z0-9_-]+)", output_text, flags=re.IGNORECASE)
+        if route_id_match:
+            return route_id_match.group(1)
+
+        file_url_match = re.search(
+            r"file_url_id\s*[:：]\s*(https?://[^\s\"']+\.(?:pdf|doc|docx))",
+            output_text,
+            flags=re.IGNORECASE,
+        )
+        if file_url_match:
+            route_id_from_url = self._extract_route_id_from_url(file_url_match.group(1))
+            if route_id_from_url:
+                return route_id_from_url
+
+        return None
+
+    def _extract_route_id_from_url(self, url: str) -> str | None:
+        """Extract route id from the file URL basename (without extension)."""
+
+        parsed = urlparse(url.strip())
+        filename = parsed.path.rsplit("/", 1)[-1]
+        if "." not in filename:
+            return None
+
+        stem, ext = filename.rsplit(".", 1)
+        if ext.lower() not in {"pdf", "doc", "docx"}:
+            return None
+        if not stem:
+            return None
+        return stem
 
     def _parse_visa_result(self, payload: dict[str, Any]) -> tuple[str, list[str]]:
         """Parse visa search workflow output into (answer, sources)."""

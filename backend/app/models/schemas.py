@@ -163,6 +163,7 @@ class RouteCandidate(BaseModel):
     """路线检索候选项（来自 WF_ROUTE_SEARCH 工作流输出）。"""
 
     document_id: str
+    route_id: str | None = None
     output: str  # RAG 原始输出文本（含 basic_info / rag_abstract / file_url_id 等）
     model_config = ConfigDict(extra="allow")
 
