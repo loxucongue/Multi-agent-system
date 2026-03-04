@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
+from app.config.database import db_health_check
 from app.config.redis import redis_health_check
 from app.utils.logger import configure_logging, get_logger, set_trace_id
 
@@ -45,8 +46,11 @@ async def health() -> dict[str, str]:
     """Return backend health status."""
 
     redis_ok = await redis_health_check()
-    overall_status = "ok" if redis_ok else "degraded"
-    redis_status = "ok" if redis_ok else "error"
+    mysql_ok = await db_health_check()
 
-    logger.info(f"health check redis={redis_status}")
-    return {"status": overall_status, "redis": redis_status}
+    overall_status = "ok" if (redis_ok and mysql_ok) else "degraded"
+    redis_status = "ok" if redis_ok else "error"
+    mysql_status = "ok" if mysql_ok else "error"
+
+    logger.info(f"health check redis={redis_status} mysql={mysql_status}")
+    return {"status": overall_status, "redis": redis_status, "mysql": mysql_status}

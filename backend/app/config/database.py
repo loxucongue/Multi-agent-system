@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config.settings import settings
@@ -21,3 +22,14 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
     async with async_session_factory() as session:
         yield session
+
+
+async def db_health_check() -> bool:
+    """Check MySQL connectivity by executing SELECT 1."""
+
+    try:
+        async with async_session_factory() as session:
+            await session.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False
