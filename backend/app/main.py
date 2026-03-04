@@ -8,8 +8,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
-from app.config.database import db_health_check, engine
-from app.config.redis import redis_client, redis_health_check
+from app.config.database import db_health_check
+from app.config.redis import redis_health_check
+from app.services.container import services
 from app.utils.logger import configure_logging, get_logger, set_trace_id
 
 
@@ -21,10 +22,10 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI):
     """Manage application startup/shutdown lifecycle resources."""
 
+    await services.initialize()
     logger.info("application startup complete")
     yield
-    await redis_client.aclose()
-    await engine.dispose()
+    await services.shutdown()
     logger.info("application shutdown complete")
 
 
