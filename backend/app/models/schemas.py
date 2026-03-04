@@ -323,9 +323,16 @@ class RouteBatchItem(BaseModel):
     supplier: str
     tags: list
     summary: str
+    highlights: str
+    base_info: str
+    itinerary_json: Any
+    notice: str
+    included: str
     doc_url: str
     is_hot: bool
     sort_weight: int
+    created_at: datetime
+    updated_at: datetime
     pricing: PricingInfo | None = None
     schedule: ScheduleInfo | None = None
     model_config = ConfigDict(from_attributes=True)
