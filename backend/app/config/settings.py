@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     ADMIN_USERNAME: str = ""
     ADMIN_PASSWORD_HASH: str = ""
     JWT_SECRET_KEY: str = ""
+    SESSION_CONTEXT_TURNS: int = 6
 
     model_config = SettingsConfigDict(
         env_file=".env",

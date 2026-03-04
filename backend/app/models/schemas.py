@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ─────────────────────────────────────────────
@@ -188,6 +188,26 @@ class ExternalInfoResult(BaseModel):
     info_type: str  # weather / flight / transport
     output: str = ""
     debug_url: str | None = None
+
+
+# ─────────────────────────────────────────────
+#  Session schemas
+# ─────────────────────────────────────────────
+
+
+class SessionState(BaseModel):
+    """会话状态 JSON。"""
+
+    stage: str = "init"
+    lead_status: str = "none"
+    active_route_id: int | None = None
+    candidate_route_ids: list[int] = Field(default_factory=list)
+    excluded_route_ids: list[int] = Field(default_factory=list)
+    user_profile: dict[str, Any] = Field(default_factory=dict)
+    last_intent: str | None = None
+    followup_count: int = 0
+    context_turns: list[dict[str, str]] = Field(default_factory=list)
+    state_version: int = 1
 
 
 # ─────────────────────────────────────────────
