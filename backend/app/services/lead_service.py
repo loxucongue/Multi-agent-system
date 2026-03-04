@@ -6,6 +6,7 @@ import re
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config.database import async_session_factory
 from app.models.database import Lead
 from app.services.session_service import SessionService
 from app.utils.logger import get_logger
@@ -19,7 +20,7 @@ class LeadService:
 
     def __init__(self, session: AsyncSession, session_service: SessionService | None = None) -> None:
         self._session = session
-        self._session_service = session_service or SessionService(session=session)
+        self._session_service = session_service or SessionService(session_factory=async_session_factory)
         self._logger = get_logger(__name__)
 
     async def create_lead(self, session_id: str, phone: str, active_route_id: int) -> int:
@@ -45,6 +46,13 @@ class LeadService:
         self._session.add(lead)
 
         try:
+            await self._session.commit()
+            await self._session.refresh(lead)
+        except Exception:
+            await self._session.rollback()
+            raise
+
+        try:
             await self._session_service.update_session_state(
                 session_id,
                 {
@@ -52,10 +60,10 @@ class LeadService:
                     "active_route_id": active_route_id,
                 },
             )
-            await self._session.refresh(lead)
         except Exception:
-            await self._session.rollback()
-            raise
+            self._logger.warning(
+                f"lead state update failed session_id={session_id} lead_id={lead.id}",
+            )
 
         self._logger.info(
             f"lead created session_id={session_id} lead_id={lead.id} active_route_id={active_route_id}"

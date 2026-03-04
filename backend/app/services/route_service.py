@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import json
-from typing import Any
-
 from redis import asyncio as aioredis
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.models.database import Route, RoutePricing, RouteSchedule
@@ -31,8 +28,12 @@ class RouteService:
     Redis 短缓存（TTL=300s），Redis 不可用时自动 fallback 到 DB。
     """
 
-    def __init__(self, session: AsyncSession, redis: aioredis.Redis | None = None) -> None:
-        self._session = session
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        redis: aioredis.Redis | None = None,
+    ) -> None:
+        self._session_factory = session_factory
         self._redis = redis
         self._logger = get_logger(__name__)
 
@@ -43,9 +44,10 @@ class RouteService:
     async def get_route_detail(self, route_id: int) -> RouteDetail | None:
         """查询单条路线全部字段。查不到返回 None。"""
 
-        stmt = select(Route).where(Route.id == route_id)
-        result = await self._session.execute(stmt)
-        route = result.scalar_one_or_none()
+        async with self._session_factory() as session:
+            stmt = select(Route).where(Route.id == route_id)
+            result = await session.execute(stmt)
+            route = result.scalar_one_or_none()
 
         if route is None:
             return None
@@ -60,15 +62,16 @@ class RouteService:
         if cached is not None:
             return cached
 
-        # ── DB 查询 ──
-        pricing_stmt = select(RoutePricing).where(RoutePricing.route_id == route_id)
-        schedule_stmt = select(RouteSchedule).where(RouteSchedule.route_id == route_id)
+        async with self._session_factory() as session:
+            # ── DB 查询 ──
+            pricing_stmt = select(RoutePricing).where(RoutePricing.route_id == route_id)
+            schedule_stmt = select(RouteSchedule).where(RouteSchedule.route_id == route_id)
 
-        pricing_result = await self._session.execute(pricing_stmt)
-        schedule_result = await self._session.execute(schedule_stmt)
+            pricing_result = await session.execute(pricing_stmt)
+            schedule_result = await session.execute(schedule_stmt)
 
-        pricing_row = pricing_result.scalar_one_or_none()
-        schedule_row = schedule_result.scalar_one_or_none()
+            pricing_row = pricing_result.scalar_one_or_none()
+            schedule_row = schedule_result.scalar_one_or_none()
 
         if pricing_row is None and schedule_row is None:
             return None
@@ -98,8 +101,9 @@ class RouteService:
             .where(Route.id.in_(route_ids))
             .options(selectinload(Route.pricing), selectinload(Route.schedule))
         )
-        result = await self._session.execute(stmt)
-        routes = result.scalars().all()
+        async with self._session_factory() as session:
+            result = await session.execute(stmt)
+            routes = result.scalars().all()
 
         items: list[RouteBatchItem] = []
         for route in routes:
@@ -133,8 +137,9 @@ class RouteService:
             .order_by(Route.sort_weight.desc())
             .limit(limit)
         )
-        result = await self._session.execute(stmt)
-        routes = result.scalars().all()
+        async with self._session_factory() as session:
+            result = await session.execute(stmt)
+            routes = result.scalars().all()
 
         cards: list[RouteCard] = []
         for route in routes:

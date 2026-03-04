@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from redis import asyncio as aioredis
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config.settings import settings
 from app.models.database import Session
@@ -20,97 +20,122 @@ _SESSION_TTL_SECONDS = _SESSION_TTL_DAYS * 24 * 60 * 60
 
 
 class SessionService:
-    """会话状态服务。"""
+    """Session state service."""
 
-    def __init__(self, session: AsyncSession, redis: aioredis.Redis | None = None) -> None:
-        self._session = session
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        redis: aioredis.Redis | None = None,
+    ) -> None:
+        self._session_factory = session_factory
         self._redis = redis
         self._logger = get_logger(__name__)
         self._context_turns_limit = max(1, settings.SESSION_CONTEXT_TURNS)
 
     async def create_session(self) -> str:
-        """创建新会话并写入 MySQL + Redis。"""
+        """Create a new session in MySQL and cache in Redis."""
 
         session_id = str(uuid4())
         state = SessionState()
 
-        row = Session(
-            id=session_id,
-            state_json=state.model_dump(mode="json"),
-            state_version=state.state_version,
-            expires_at=datetime.utcnow() + timedelta(days=_SESSION_TTL_DAYS),
-        )
-        self._session.add(row)
+        async with self._session_factory() as session:
+            row = Session(
+                id=session_id,
+                state_json=state.model_dump(mode="json"),
+                state_version=state.state_version,
+                expires_at=datetime.utcnow() + timedelta(days=_SESSION_TTL_DAYS),
+            )
+            session.add(row)
 
-        try:
-            await self._session.commit()
-        except Exception:
-            await self._session.rollback()
-            raise
+            try:
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
 
         await self._set_cache(session_id, state)
         return session_id
 
     async def get_session_state(self, session_id: str) -> SessionState | None:
-        """读取会话状态。优先 Redis，miss 则回源 MySQL。"""
+        """Get session state from Redis first, then MySQL on cache miss."""
 
         cached = await self._get_cache(session_id)
         if cached is not None:
             return cached
 
-        row = await self._get_session_row(session_id)
-        if row is None:
-            return None
+        async with self._session_factory() as session:
+            row = await self._get_session_row(session, session_id)
+            if row is None:
+                return None
 
-        if self._is_expired(row.expires_at):
-            await self._delete_cache(session_id)
-            return None
+            if self._is_expired(row.expires_at):
+                await self._delete_cache(session_id)
+                return None
 
-        state = self._row_to_state(row)
+            state = self._row_to_state(row)
+
         await self._set_cache(session_id, state)
         return state
 
     async def update_session_state(self, session_id: str, state_patch: dict[str, Any]) -> SessionState:
-        """合并更新状态并同步写入 MySQL + Redis（state_version + 1）。"""
+        """Merge patch into state, bump version, and persist to DB and cache."""
 
-        row = await self._get_session_row(session_id)
-        if row is None or self._is_expired(row.expires_at):
-            raise ValueError(f"session not found or expired: {session_id}")
+        async with self._session_factory() as session:
+            row = await self._get_session_row(session, session_id)
+            if row is None or self._is_expired(row.expires_at):
+                raise ValueError(f"session not found or expired: {session_id}")
 
-        current_state = self._row_to_state(row)
-        merged = self._deep_merge_dict(current_state.model_dump(mode="python"), state_patch)
-        merged["state_version"] = current_state.state_version + 1
-        next_state = SessionState.model_validate(merged)
+            current_state = self._row_to_state(row)
+            merged = self._deep_merge_dict(current_state.model_dump(mode="python"), state_patch)
+            merged["state_version"] = current_state.state_version + 1
+            next_state = SessionState.model_validate(merged)
 
-        row.state_json = next_state.model_dump(mode="json")
-        row.state_version = next_state.state_version
-        row.expires_at = datetime.utcnow() + timedelta(days=_SESSION_TTL_DAYS)
+            row.state_json = next_state.model_dump(mode="json")
+            row.state_version = next_state.state_version
+            row.expires_at = datetime.utcnow() + timedelta(days=_SESSION_TTL_DAYS)
 
-        try:
-            await self._session.commit()
-        except Exception:
-            await self._session.rollback()
-            raise
+            try:
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
 
         await self._set_cache(session_id, next_state)
         return next_state
 
     async def append_turn(self, session_id: str, user_msg: str, assistant_msg: str) -> None:
-        """追加一轮 user+assistant 对话到 context_turns。"""
+        """Append one dialog turn to context_turns."""
 
-        row = await self._get_session_row(session_id)
-        if row is None or self._is_expired(row.expires_at):
-            raise ValueError(f"session not found or expired: {session_id}")
+        async with self._session_factory() as session:
+            row = await self._get_session_row(session, session_id)
+            if row is None or self._is_expired(row.expires_at):
+                raise ValueError(f"session not found or expired: {session_id}")
 
-        current = self._row_to_state(row)
-        turns = list(current.context_turns)
-        turns.append({"user": user_msg, "assistant": assistant_msg})
-        await self.update_session_state(session_id, {"context_turns": turns})
+            current_state = self._row_to_state(row)
+            turns = list(current_state.context_turns)
+            turns.append({"user": user_msg, "assistant": assistant_msg})
+
+            merged = current_state.model_dump(mode="python")
+            merged["context_turns"] = turns
+            merged["state_version"] = current_state.state_version + 1
+            next_state = SessionState.model_validate(merged)
+
+            row.state_json = next_state.model_dump(mode="json")
+            row.state_version = next_state.state_version
+            row.expires_at = datetime.utcnow() + timedelta(days=_SESSION_TTL_DAYS)
+
+            try:
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+        await self._set_cache(session_id, next_state)
 
     async def get_context_turns(self, session_id: str, n: int) -> list[dict[str, str]]:
-        """读取最近 n 轮上下文；实际 n 使用系统配置值。"""
+        """Get recent context turns; actual limit comes from settings."""
 
-        _ = n  # keep signature compatibility; limit comes from system settings
+        _ = n  # keep signature compatibility
         state = await self.get_session_state(session_id)
         if state is None:
             return []
@@ -118,11 +143,13 @@ class SessionService:
         return state.context_turns[-self._context_turns_limit :]
 
     async def is_session_valid(self, session_id: str) -> bool:
-        """检查会话是否存在且未过期。"""
+        """Check whether session exists and is not expired."""
 
-        stmt = select(Session.expires_at).where(Session.id == session_id)
-        result = await self._session.execute(stmt)
-        expires_at = result.scalar_one_or_none()
+        async with self._session_factory() as session:
+            stmt = select(Session.expires_at).where(Session.id == session_id)
+            result = await session.execute(stmt)
+            expires_at = result.scalar_one_or_none()
+
         if expires_at is None:
             return False
         return not self._is_expired(expires_at)
@@ -158,9 +185,9 @@ class SessionService:
         except Exception:
             self._logger.debug(f"redis delete failed for {self._cache_key(session_id)}")
 
-    async def _get_session_row(self, session_id: str) -> Session | None:
+    async def _get_session_row(self, session: AsyncSession, session_id: str) -> Session | None:
         stmt = select(Session).where(Session.id == session_id)
-        result = await self._session.execute(stmt)
+        result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
     def _row_to_state(self, row: Session) -> SessionState:
