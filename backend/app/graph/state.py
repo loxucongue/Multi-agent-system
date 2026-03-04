@@ -124,6 +124,7 @@ class GraphState(TypedDict):
 
     slots_ready: bool
     from_rematch: bool
+    request_human: bool
     error: str | None
 
 
@@ -163,6 +164,7 @@ def create_initial_state(
         state_patches={},
         slots_ready=bool(profile.destinations),
         from_rematch=False,
+        request_human=False,
         error=None,
     )
 
