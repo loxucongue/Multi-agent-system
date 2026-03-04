@@ -1,21 +1,34 @@
-﻿"""FastAPI application entrypoint."""
+"""FastAPI application entrypoint."""
 
 import uuid
 from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
-from app.config.database import db_health_check
-from app.config.redis import redis_health_check
+from app.config.database import db_health_check, engine
+from app.config.redis import redis_client, redis_health_check
 from app.utils.logger import configure_logging, get_logger, set_trace_id
 
 
 configure_logging()
 logger = get_logger(__name__)
 
-app = FastAPI(title="Travel Advisor Backend")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application startup/shutdown lifecycle resources."""
+
+    logger.info("application startup complete")
+    yield
+    await redis_client.aclose()
+    await engine.dispose()
+    logger.info("application shutdown complete")
+
+
+app = FastAPI(title="Travel Advisor Backend", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
