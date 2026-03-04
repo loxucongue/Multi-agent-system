@@ -244,6 +244,18 @@ class LeadResponse(BaseModel):
     phone_masked: str
 
 
+class LeadListItem(BaseModel):
+    """Lead list row for admin pages."""
+
+    id: int
+    session_id: str
+    phone: str
+    source: str
+    active_route_id: int | None = None
+    status: str
+    created_at: datetime
+
+
 class LeadInfo(BaseModel):
     """Lead detail for user/admin display."""
 
@@ -260,7 +272,7 @@ class LeadInfo(BaseModel):
 class LeadListResponse(BaseModel):
     """Paginated lead list response."""
 
-    leads: list[LeadInfo] = Field(default_factory=list)
+    leads: list[LeadListItem] = Field(default_factory=list)
     total: int
 
 

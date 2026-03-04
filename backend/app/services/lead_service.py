@@ -8,8 +8,9 @@ from redis import asyncio as aioredis
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models.database import Lead, Session
-from app.models.schemas import LeadInfo, LeadListResponse, LeadResponse
+from app.models.database import Lead
+from app.models.schemas import LeadListItem, LeadResponse
+from app.services.session_service import SessionService
 from app.utils.logger import get_logger
 from app.utils.security import mask_phone, validate_phone
 
@@ -28,16 +29,17 @@ class LeadService:
         self._session_factory = session_factory
         self._redis = redis
         self._logger = get_logger(__name__)
+        self._session_service = SessionService(session_factory=session_factory, redis=redis)
 
     async def create_lead(
         self,
         session_id: str,
         phone: str,
-        active_route_id: int | None = None,
-        user_profile: dict[str, Any] | None = None,
+        active_route_id: int | None,
+        user_profile: dict[str, Any],
         source: str = "chat",
     ) -> LeadResponse:
-        """Create lead and mark session lead_status as captured."""
+        """Create lead and sync lead status to session state."""
 
         normalized_phone = phone.strip()
         if not validate_phone(normalized_phone):
@@ -46,10 +48,6 @@ class LeadService:
         masked_phone = mask_phone(normalized_phone)
 
         async with self._session_factory() as session:
-            session_row = await self._get_session_row(session, session_id)
-            if session_row is None:
-                raise ValueError(f"session not found: {session_id}")
-
             lead = Lead(
                 session_id=session_id,
                 phone=normalized_phone,
@@ -61,18 +59,19 @@ class LeadService:
             )
             session.add(lead)
 
-            state_payload = dict(session_row.state_json or {})
-            state_payload["lead_status"] = _LEAD_CAPTURED_STATUS
-            session_row.state_json = state_payload
-            session_row.state_version = (session_row.state_version or 1) + 1
-
             try:
                 await session.commit()
             except Exception:
                 await session.rollback()
                 raise
 
-        await self._invalidate_session_cache(session_id)
+        await self._session_service.update_session_state(
+            session_id=session_id,
+            state_patch={
+                "lead_status": _LEAD_CAPTURED_STATUS,
+                "lead_phone": masked_phone,
+            },
+        )
 
         self._logger.info(f"lead created session_id={session_id} phone_masked={masked_phone}")
         return LeadResponse(
@@ -81,7 +80,7 @@ class LeadService:
             phone_masked=masked_phone,
         )
 
-    async def get_lead_by_session(self, session_id: str) -> LeadInfo | None:
+    async def get_lead_by_session(self, session_id: str) -> Lead | None:
         """Get latest lead record by session id."""
 
         async with self._session_factory() as session:
@@ -92,18 +91,16 @@ class LeadService:
                 .limit(1)
             )
             result = await session.execute(stmt)
-            row = result.scalar_one_or_none()
-
-        if row is None:
-            return None
-        return LeadInfo.model_validate(row)
+            return result.scalar_one_or_none()
 
     async def get_leads_list(
         self,
         page: int = 1,
         size: int = 20,
         status: str | None = None,
-    ) -> LeadListResponse:
+        *,
+        include_raw_phone: bool = False,
+    ) -> dict[str, Any]:
         """Get paginated leads for admin usage."""
 
         page = 1 if page < 1 else page
@@ -125,18 +122,18 @@ class LeadService:
             rows = rows_result.scalars().all()
             total = int(total_result.scalar_one() or 0)
 
-        items = [LeadInfo.model_validate(item) for item in rows]
-        return LeadListResponse(leads=items, total=total)
+        leads: list[dict[str, Any]] = []
+        for row in rows:
+            phone_value = row.phone if include_raw_phone else row.phone_masked
+            item = LeadListItem(
+                id=row.id,
+                session_id=row.session_id,
+                phone=phone_value,
+                source=row.source,
+                active_route_id=row.active_route_id,
+                status=row.status,
+                created_at=row.created_at,
+            )
+            leads.append(item.model_dump())
 
-    async def _get_session_row(self, session: AsyncSession, session_id: str) -> Session | None:
-        stmt = select(Session).where(Session.id == session_id)
-        result = await session.execute(stmt)
-        return result.scalar_one_or_none()
-
-    async def _invalidate_session_cache(self, session_id: str) -> None:
-        if self._redis is None:
-            return
-        try:
-            await self._redis.delete(f"session:{session_id}")
-        except Exception:
-            self._logger.debug(f"redis delete failed for session:{session_id}")
+        return {"leads": leads, "total": total}
