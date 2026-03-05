@@ -29,10 +29,10 @@ _INTENT_SET = {
 
 _MULTI_INTENT_PRIORITY = [
     "price_schedule",
-    "visa",
+    "compare",
     "route_recommend",
     "route_followup",
-    "compare",
+    "visa",
     "external_info",
     "rematch",
     "chitchat",
