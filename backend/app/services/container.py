@@ -71,7 +71,11 @@ class ServiceContainer:
             self._kb_admin_service = KBAdminService(client=self._coze_client)
             self._route_service = RouteService(session_factory=self._session_factory, redis=self._redis)
             self._session_service = SessionService(session_factory=self._session_factory, redis=self._redis)
-            self._lead_service = LeadService(session_factory=self._session_factory, redis=self._redis)
+            self._lead_service = LeadService(
+                session_factory=self._session_factory,
+                redis=self._redis,
+                session_service=self._session_service,
+            )
             self._rate_limiter = RateLimiter(redis=self._redis)
             self._audit_service = AuditService(session_factory=self._session_factory)
 

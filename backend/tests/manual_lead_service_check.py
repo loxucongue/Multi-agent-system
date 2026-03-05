@@ -18,7 +18,11 @@ from app.services.session_service import SessionService
 
 async def main() -> None:
     session_service = SessionService(async_session_factory, redis_client)
-    lead_service = LeadService(async_session_factory, redis_client)
+    lead_service = LeadService(
+        session_factory=async_session_factory,
+        redis=redis_client,
+        session_service=session_service,
+    )
 
     session_id = await session_service.create_session()
     lead_resp = await lead_service.create_lead(

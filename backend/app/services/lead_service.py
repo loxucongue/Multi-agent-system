@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from redis import asyncio as aioredis
 from sqlalchemy import func, select
@@ -10,9 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.database import Lead
 from app.models.schemas import LeadListItem, LeadResponse
-from app.services.session_service import SessionService
 from app.utils.logger import get_logger
 from app.utils.security import mask_phone, validate_phone
+
+if TYPE_CHECKING:
+    from app.services.session_service import SessionService
 
 _LEAD_CAPTURED_STATUS = "captured"
 _LEAD_DEFAULT_STATUS = "new"
@@ -24,12 +26,13 @@ class LeadService:
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],
-        redis: aioredis.Redis | None = None,
+        redis: aioredis.Redis | None,
+        session_service: SessionService,
     ) -> None:
         self._session_factory = session_factory
         self._redis = redis
         self._logger = get_logger(__name__)
-        self._session_service = SessionService(session_factory=session_factory, redis=redis)
+        self._session_service = session_service
 
     async def create_lead(
         self,
