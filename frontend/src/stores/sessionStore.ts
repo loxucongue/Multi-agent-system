@@ -42,6 +42,7 @@ interface ChatStore {
   applyStatePatch: (patch: Record<string, unknown>) => void;
   setRouteCards: (cards: RouteCard[]) => void;
   handleUIAction: (action: UIAction) => void;
+  setLeadModalVisible: (visible: boolean) => void;
   setError: (err: string | null) => void;
   reset: () => void;
   addAssistantMessage: (content: string, extras?: Partial<ChatMessage>) => void;
@@ -200,24 +201,29 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   applyStatePatch: (patch: Record<string, unknown>) => {
-    set((state) => ({
-      stage:
-        typeof patch.stage === "string"
-          ? (patch.stage as SessionState["stage"])
-          : state.stage,
-      leadStatus:
+    set((state) => {
+      const nextLeadStatus =
         typeof patch.lead_status === "string"
           ? (patch.lead_status as SessionState["lead_status"])
-          : state.leadStatus,
-      activeRouteId:
-        typeof patch.active_route_id === "number" || patch.active_route_id === null
-          ? (patch.active_route_id as number | null)
-          : state.activeRouteId,
-      candidateRouteIds:
-        patch.candidate_route_ids !== undefined
-          ? parseRouteIds(patch.candidate_route_ids)
-          : state.candidateRouteIds,
-    }));
+          : state.leadStatus;
+
+      return {
+        stage:
+          typeof patch.stage === "string"
+            ? (patch.stage as SessionState["stage"])
+            : state.stage,
+        leadStatus: nextLeadStatus,
+        activeRouteId:
+          typeof patch.active_route_id === "number" || patch.active_route_id === null
+            ? (patch.active_route_id as number | null)
+            : state.activeRouteId,
+        candidateRouteIds:
+          patch.candidate_route_ids !== undefined
+            ? parseRouteIds(patch.candidate_route_ids)
+            : state.candidateRouteIds,
+        showLeadModal: nextLeadStatus === "captured" ? false : state.showLeadModal,
+      };
+    });
   },
 
   setRouteCards: (cards: RouteCard[]) => {
@@ -228,7 +234,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const payload = action.payload as Record<string, unknown>;
 
     if (action.action === "collect_phone") {
-      set({ showLeadModal: true });
+      set((state) => ({
+        showLeadModal: state.leadStatus !== "captured",
+      }));
       return;
     }
 
@@ -260,6 +268,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         set({ candidateRouteIds: routeIds });
       }
     }
+  },
+
+  setLeadModalVisible: (visible: boolean) => {
+    set((state) => ({
+      showLeadModal: state.leadStatus === "captured" ? false : visible,
+    }));
   },
 
   setError: (err: string | null) => {
