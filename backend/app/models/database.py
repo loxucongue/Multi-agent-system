@@ -138,6 +138,22 @@ class PromptVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
 
+class SystemConfig(Base):
+    """System configuration key-value store."""
+
+    __tablename__ = "system_configs"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 class AuditLog(Base):
     """Audit log records for end-to-end traceability."""
 
