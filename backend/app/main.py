@@ -17,6 +17,7 @@ from app.api.chat import router as chat_router
 from app.api.compare import router as compare_router
 from app.api.lead import router as lead_router
 from app.api.session import router as session_router
+from app.config.settings import settings
 from app.config.database import db_health_check
 from app.config.redis import redis_health_check
 from app.services.container import services
@@ -50,9 +51,11 @@ app.include_router(admin_kb_router, prefix="/admin/kb", tags=["admin-kb"])
 app.include_router(admin_logs_router, prefix="/admin/logs", tags=["admin-logs"])
 app.include_router(admin_config_router, prefix="/admin/config", tags=["admin-config"])
 
+cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

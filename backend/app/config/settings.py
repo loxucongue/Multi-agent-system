@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     ADMIN_PASSWORD_HASH: str = ""
     JWT_SECRET_KEY: str = ""
     SESSION_CONTEXT_TURNS: int = 6
+    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     model_config = SettingsConfigDict(
         env_file=".env",
