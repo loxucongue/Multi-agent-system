@@ -363,3 +363,40 @@ class RouteCard(BaseModel):
     price_min: Decimal | None = None
     price_max: Decimal | None = None
     model_config = ConfigDict(from_attributes=True)
+
+
+class ComparePriceRange(BaseModel):
+    """Price range block for route comparison."""
+
+    min: float
+    max: float
+    currency: str
+    updated_at: str
+
+
+class CompareNextSchedule(BaseModel):
+    """Nearest schedule block for route comparison."""
+
+    date: str | None = None
+    updated_at: str
+
+
+class CompareRouteItem(BaseModel):
+    """Single route comparison item for CompareDrawer."""
+
+    route_id: int
+    name: str
+    days: int
+    highlights: list[str] = Field(default_factory=list)
+    itinerary_style: str
+    included_summary: str
+    notice_summary: str
+    price_range: ComparePriceRange
+    next_schedule: CompareNextSchedule
+    suitable_for: list[str] = Field(default_factory=list)
+
+
+class CompareData(BaseModel):
+    """Route comparison payload for frontend drawer."""
+
+    routes: list[CompareRouteItem] = Field(default_factory=list)
