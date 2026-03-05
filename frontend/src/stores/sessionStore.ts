@@ -8,9 +8,19 @@ import type {
   CompareData,
   RouteCard,
   SessionCreateResponse,
+  SessionDetailResponse,
   SessionState,
   UIAction,
 } from "@/types";
+
+export interface SessionHistoryItem {
+  session_id: string;
+  title: string;
+  created_at: number;
+  last_active_at: number;
+}
+
+export const SESSION_HISTORY_KEY = "travel_session_history_v1";
 
 interface ChatStore {
   // ─── 会话状态 ───
@@ -43,6 +53,7 @@ interface ChatStore {
   setRouteCards: (cards: RouteCard[]) => void;
   handleUIAction: (action: UIAction) => void;
   setLeadModalVisible: (visible: boolean) => void;
+  switchSession: (sessionId: string) => Promise<void>;
   setError: (err: string | null) => void;
   reset: () => void;
   addAssistantMessage: (content: string, extras?: Partial<ChatMessage>) => void;
@@ -70,6 +81,90 @@ const createMessageId = (): string => {
   }
 
   return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const readSessionHistory = (): SessionHistoryItem[] => {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  try {
+    const raw = window.localStorage.getItem(SESSION_HISTORY_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw) as SessionHistoryItem[];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter(
+      (item) =>
+        typeof item?.session_id === "string" &&
+        typeof item?.title === "string" &&
+        typeof item?.created_at === "number" &&
+        typeof item?.last_active_at === "number",
+    );
+  } catch {
+    return [];
+  }
+};
+
+const writeSessionHistory = (items: SessionHistoryItem[]) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(items));
+};
+
+const deriveSessionTitle = (text: string): string => {
+  const normalized = text.trim();
+  if (!normalized) {
+    return "新的旅游咨询";
+  }
+
+  const daysMatch = normalized.match(/(\d{1,2})\s*天/);
+  const days = daysMatch?.[1];
+
+  const destinationMatch =
+    normalized.match(/去\s*([一-龥A-Za-z]{2,12})/) ??
+    normalized.match(/([一-龥A-Za-z]{2,12})(?:旅游|跟团|自由行|行程)/);
+  const destination = destinationMatch?.[1];
+
+  if (destination && days) {
+    return `${destination}${days}日游咨询`;
+  }
+  if (destination) {
+    return `${destination}旅游咨询`;
+  }
+  return `${normalized.slice(0, 12)}咨询`;
+};
+
+const upsertSessionHistory = (sessionId: string, userText?: string) => {
+  const items = readSessionHistory();
+  const now = Date.now();
+  const nextTitle = userText ? deriveSessionTitle(userText) : "新的旅游咨询";
+  const idx = items.findIndex((item) => item.session_id === sessionId);
+
+  if (idx < 0) {
+    items.unshift({
+      session_id: sessionId,
+      title: nextTitle,
+      created_at: now,
+      last_active_at: now,
+    });
+    writeSessionHistory(items);
+    return;
+  }
+
+  const current = items[idx];
+  const isDefaultTitle = current.title === "新的旅游咨询" || current.title === "未命名咨询";
+  items[idx] = {
+    ...current,
+    title: userText && isDefaultTitle ? nextTitle : current.title,
+    last_active_at: now,
+  };
+
+  const updated = [items[idx], ...items.filter((item) => item.session_id !== sessionId)];
+  writeSessionHistory(updated);
 };
 
 const toErrorMessage = (error: unknown): string => {
@@ -120,6 +215,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
 
     set({ sessionId: response.session_id });
+    upsertSessionHistory(response.session_id);
     return response.session_id;
   },
 
@@ -153,6 +249,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         session_id: sessionId,
         message,
       };
+
+      upsertSessionHistory(sessionId, message);
 
       const response = await apiRequest<ChatSendResponse>("/chat/send", {
         method: "POST",
@@ -274,6 +372,32 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((state) => ({
       showLeadModal: state.leadStatus === "captured" ? false : visible,
     }));
+  },
+
+  switchSession: async (sessionId: string) => {
+    try {
+      const detail = await apiRequest<SessionDetailResponse>(`/session/${sessionId}`);
+      set({
+        sessionId: detail.session_id,
+        stage: detail.stage as SessionState["stage"],
+        leadStatus: detail.lead_status as SessionState["lead_status"],
+        activeRouteId: detail.active_route_id,
+        candidateRouteIds: detail.candidate_route_ids,
+        routeCards: detail.candidate_cards,
+        messages: [],
+        currentStreamText: "",
+        isStreaming: false,
+        error: null,
+        compareData: null,
+        showCompareDrawer: false,
+        showLeadModal: false,
+      });
+      upsertSessionHistory(sessionId);
+    } catch (error) {
+      set({
+        error: toErrorMessage(error),
+      });
+    }
   },
 
   setError: (err: string | null) => {

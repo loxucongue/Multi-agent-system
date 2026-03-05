@@ -3,6 +3,8 @@
 import type { ReactNode } from "react";
 import { Layout } from "antd";
 
+import SessionList from "@/components/chat/SessionList";
+
 const { Sider, Content } = Layout;
 
 interface ChatLayoutProps {
@@ -13,7 +15,7 @@ export default function ChatLayout({ children }: ChatLayoutProps) {
   return (
     <Layout style={{ height: "100vh" }}>
       <Sider width={240} collapsible breakpoint="md" collapsedWidth={0}>
-        <div style={{ color: "#fff", padding: 16 }}>会话列表</div>
+        <SessionList />
       </Sider>
       <Content style={{ padding: 16, overflow: "auto" }}>{children}</Content>
     </Layout>
