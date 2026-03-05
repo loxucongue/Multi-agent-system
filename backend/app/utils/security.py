@@ -15,7 +15,7 @@ from app.config.settings import settings
 _CN_PHONE_PATTERN = re.compile(r"^1[3-9]\d{9}$")
 _ALGORITHM = "HS256"
 _ACCESS_TOKEN_EXPIRE_HOURS = 24
-_bearer_scheme = HTTPBearer()
+_bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def validate_phone(phone: str) -> bool:
@@ -68,6 +68,12 @@ async def get_current_admin(
     credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
 ) -> str:
     """FastAPI dependency that validates admin bearer token."""
+
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid or expired token",
+        )
 
     payload = decode_access_token(credentials.credentials)
     username = payload.get("sub")
