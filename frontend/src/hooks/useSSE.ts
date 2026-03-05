@@ -1,6 +1,7 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { API_BASE_URL } from "@/services/api";
 import { useChatStore } from "@/stores/sessionStore";
@@ -18,7 +19,17 @@ const safeJsonParse = <T>(value: string): T | null => {
 };
 
 export function useSSE() {
-  const store = useChatStore();
+  const { appendToken, handleUIAction, setRouteCards, applyStatePatch, finishStream, setError } = useChatStore(
+    useShallow((state) => ({
+      appendToken: state.appendToken,
+      handleUIAction: state.handleUIAction,
+      setRouteCards: state.setRouteCards,
+      applyStatePatch: state.applyStatePatch,
+      finishStream: state.finishStream,
+      setError: state.setError,
+    })),
+  );
+
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectCountRef = useRef(0);
 
@@ -47,34 +58,34 @@ export function useSSE() {
         eventSource.addEventListener("token", (event) => {
           const data = safeJsonParse<{ text?: string }>((event as MessageEvent).data);
           if (data?.text) {
-            store.appendToken(data.text);
+            appendToken(data.text);
           }
         });
 
         eventSource.addEventListener("ui_action", (event) => {
           const action = safeJsonParse<UIAction>((event as MessageEvent).data);
           if (action) {
-            store.handleUIAction(action);
+            handleUIAction(action);
           }
         });
 
         eventSource.addEventListener("cards", (event) => {
           const cards = safeJsonParse<RouteCard[]>((event as MessageEvent).data);
           if (Array.isArray(cards)) {
-            store.setRouteCards(cards);
+            setRouteCards(cards);
           }
         });
 
         eventSource.addEventListener("state_patch", (event) => {
           const patch = safeJsonParse<Record<string, unknown>>((event as MessageEvent).data);
           if (patch) {
-            store.applyStatePatch(patch);
+            applyStatePatch(patch);
           }
         });
 
         eventSource.addEventListener("done", () => {
           reconnectCountRef.current = 0;
-          store.finishStream();
+          finishStream();
           disconnect();
         });
 
@@ -84,8 +95,8 @@ export function useSSE() {
           }
 
           const data = safeJsonParse<{ message?: string }>(event.data);
-          store.setError(data?.message ?? "服务端返回错误");
-          store.finishStream();
+          setError(data?.message ?? "服务端返回错误");
+          finishStream();
           disconnect();
         });
 
@@ -102,15 +113,15 @@ export function useSSE() {
             return;
           }
 
-          store.setError("连接中断，请重试");
-          store.finishStream();
+          setError("连接中断，请重试");
+          finishStream();
           disconnect();
         };
       };
 
       openConnection(true);
     },
-    [disconnect, store],
+    [appendToken, applyStatePatch, disconnect, finishStream, handleUIAction, setError, setRouteCards],
   );
 
   useEffect(() => {

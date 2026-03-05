@@ -4,6 +4,7 @@ import { SendOutlined } from "@ant-design/icons";
 import { Button, Input, Skeleton, Space, Spin, Typography } from "antd";
 import type { KeyboardEvent } from "react";
 import { useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { useChatStore } from "@/stores/sessionStore";
 
@@ -16,10 +17,12 @@ interface ChatInputProps {
 export default function ChatInput({ onSend }: ChatInputProps) {
   const [text, setText] = useState("");
 
-  const { isStreaming, messages } = useChatStore((state) => ({
-    isStreaming: state.isStreaming,
-    messages: state.messages,
-  }));
+  const { isStreaming, messages } = useChatStore(
+    useShallow((state) => ({
+      isStreaming: state.isStreaming,
+      messages: state.messages,
+    })),
+  );
 
   const doSend = async (message: string) => {
     const trimmed = message.trim();

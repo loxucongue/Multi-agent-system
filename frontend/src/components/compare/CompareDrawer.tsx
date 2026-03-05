@@ -3,6 +3,7 @@
 import { Button, Drawer, Empty, Space, Tag, Typography } from "antd";
 import { useState } from "react";
 import type { ReactNode } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { useSSE } from "@/hooks/useSSE";
 import { useChatStore } from "@/stores/sessionStore";
@@ -92,10 +93,12 @@ const rowDefs: RowDef[] = [
 export default function CompareDrawer({ open, data, onClose }: CompareDrawerProps) {
   const [pendingRouteId, setPendingRouteId] = useState<number | null>(null);
   const { connect } = useSSE();
-  const { sendMessage, isStreaming } = useChatStore((state) => ({
-    sendMessage: state.sendMessage,
-    isStreaming: state.isStreaming,
-  }));
+  const { sendMessage, isStreaming } = useChatStore(
+    useShallow((state) => ({
+      sendMessage: state.sendMessage,
+      isStreaming: state.isStreaming,
+    })),
+  );
 
   const routes = data?.routes ?? [];
 

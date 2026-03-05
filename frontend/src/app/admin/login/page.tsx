@@ -4,6 +4,7 @@ import { LockOutlined, UserOutlined } from "@ant-design/icons";
 import { App, Button, Card, Form, Input, Typography } from "antd";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useShallow } from "zustand/react/shallow";
 
 import { useAdminStore } from "@/stores/adminStore";
 
@@ -19,10 +20,12 @@ export default function AdminLoginPage() {
   const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
 
-  const { login, token } = useAdminStore((state) => ({
-    login: state.login,
-    token: state.token,
-  }));
+  const { login, token } = useAdminStore(
+    useShallow((state) => ({
+      login: state.login,
+      token: state.token,
+    })),
+  );
 
   useEffect(() => {
     if (token) {

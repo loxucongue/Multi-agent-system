@@ -17,6 +17,7 @@ import type { ColumnsType } from "antd/es/table";
 import type { UploadProps } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useShallow } from "zustand/react/shallow";
 
 import { useAdminStore } from "@/stores/adminStore";
 
@@ -74,10 +75,12 @@ const toBase64 = (file: File): Promise<string> =>
 export default function AdminKbPage() {
   const router = useRouter();
   const { message } = App.useApp();
-  const { authedFetch, logout } = useAdminStore((state) => ({
-    authedFetch: state.authedFetch,
-    logout: state.logout,
-  }));
+  const { authedFetch, logout } = useAdminStore(
+    useShallow((state) => ({
+      authedFetch: state.authedFetch,
+      logout: state.logout,
+    })),
+  );
 
   const [loadingDatasets, setLoadingDatasets] = useState(false);
   const [datasets, setDatasets] = useState<DatasetItem[]>([]);

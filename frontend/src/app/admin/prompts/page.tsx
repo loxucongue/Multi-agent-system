@@ -4,6 +4,7 @@ import { App, Button, Card, Input, List, Modal, Space, Table, Tag, Typography } 
 import type { ColumnsType } from "antd/es/table";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useShallow } from "zustand/react/shallow";
 
 import { useAdminStore } from "@/stores/adminStore";
 
@@ -21,10 +22,12 @@ interface PromptVersion {
 export default function AdminPromptsPage() {
   const router = useRouter();
   const { message } = App.useApp();
-  const { authedFetch, logout } = useAdminStore((state) => ({
-    authedFetch: state.authedFetch,
-    logout: state.logout,
-  }));
+  const { authedFetch, logout } = useAdminStore(
+    useShallow((state) => ({
+      authedFetch: state.authedFetch,
+      logout: state.logout,
+    })),
+  );
 
   const [loadingNodes, setLoadingNodes] = useState(false);
   const [nodeNames, setNodeNames] = useState<string[]>([]);

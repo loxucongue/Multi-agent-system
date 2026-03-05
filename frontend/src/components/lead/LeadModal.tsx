@@ -2,6 +2,7 @@
 
 import { App, Button, Form, Input, Modal, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { API_BASE_URL } from "@/services/api";
 import { useChatStore } from "@/stores/sessionStore";
@@ -21,11 +22,13 @@ export default function LeadModal({ open, onClose }: LeadModalProps) {
   const [submitting, setSubmitting] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
 
-  const { sessionId, leadStatus, setLeadModalVisible } = useChatStore((state) => ({
-    sessionId: state.sessionId,
-    leadStatus: state.leadStatus,
-    setLeadModalVisible: state.setLeadModalVisible,
-  }));
+  const { sessionId, leadStatus, setLeadModalVisible } = useChatStore(
+    useShallow((state) => ({
+      sessionId: state.sessionId,
+      leadStatus: state.leadStatus,
+      setLeadModalVisible: state.setLeadModalVisible,
+    })),
+  );
 
   useEffect(() => {
     if (!open) {

@@ -3,6 +3,7 @@
 import { CompassOutlined, LoadingOutlined, WarningOutlined } from "@ant-design/icons";
 import { Empty, Skeleton, Spin } from "antd";
 import { useEffect, useRef } from "react";
+import { useShallow } from "zustand/react/shallow";
 import ReactMarkdown from "react-markdown";
 
 import { useChatStore } from "@/stores/sessionStore";
@@ -123,11 +124,13 @@ const renderBubble = (message: ChatMessage) => {
 };
 
 export default function MessageList() {
-  const { messages, isStreaming, currentStreamText } = useChatStore((state) => ({
-    messages: state.messages,
-    isStreaming: state.isStreaming,
-    currentStreamText: state.currentStreamText,
-  }));
+  const { messages, isStreaming, currentStreamText } = useChatStore(
+    useShallow((state) => ({
+      messages: state.messages,
+      isStreaming: state.isStreaming,
+      currentStreamText: state.currentStreamText,
+    })),
+  );
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 

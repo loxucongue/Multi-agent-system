@@ -2,6 +2,7 @@
 
 import { Alert, Button, Spin } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import CompareDrawer from "@/components/compare/CompareDrawer";
 import ChatInput from "@/components/chat/ChatInput";
@@ -58,26 +59,28 @@ export default function ChatPage() {
     setCompareDrawerVisible,
     setCompareData,
     setError,
-  } = useChatStore((state) => ({
-    sessionId: state.sessionId,
-    stage: state.stage,
-    activeRouteId: state.activeRouteId,
-    candidateRouteIds: state.candidateRouteIds,
-    routeCards: state.routeCards,
-    showLeadModal: state.showLeadModal,
-    showCompareDrawer: state.showCompareDrawer,
-    compareData: state.compareData,
-    error: state.error,
-    messages: state.messages,
-    isStreaming: state.isStreaming,
-    createSession: state.createSession,
-    hydrateSession: state.hydrateSession,
-    sendMessage: state.sendMessage,
-    setLeadModalVisible: state.setLeadModalVisible,
-    setCompareDrawerVisible: state.setCompareDrawerVisible,
-    setCompareData: state.setCompareData,
-    setError: state.setError,
-  }));
+  } = useChatStore(
+    useShallow((state) => ({
+      sessionId: state.sessionId,
+      stage: state.stage,
+      activeRouteId: state.activeRouteId,
+      candidateRouteIds: state.candidateRouteIds,
+      routeCards: state.routeCards,
+      showLeadModal: state.showLeadModal,
+      showCompareDrawer: state.showCompareDrawer,
+      compareData: state.compareData,
+      error: state.error,
+      messages: state.messages,
+      isStreaming: state.isStreaming,
+      createSession: state.createSession,
+      hydrateSession: state.hydrateSession,
+      sendMessage: state.sendMessage,
+      setLeadModalVisible: state.setLeadModalVisible,
+      setCompareDrawerVisible: state.setCompareDrawerVisible,
+      setCompareData: state.setCompareData,
+      setError: state.setError,
+    })),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -207,7 +210,7 @@ export default function ChatPage() {
     return (
       <ChatLayout>
         <div className="flex h-full items-center justify-center">
-          <Spin tip="正在恢复会话..." />
+          <Spin description="正在恢复会话..." />
         </div>
       </ChatLayout>
     );

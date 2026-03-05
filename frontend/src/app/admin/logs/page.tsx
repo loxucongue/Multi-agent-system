@@ -5,6 +5,7 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useShallow } from "zustand/react/shallow";
 
 import { useAdminStore } from "@/stores/adminStore";
 
@@ -36,10 +37,12 @@ interface LogsResponse {
 export default function AdminLogsPage() {
   const router = useRouter();
   const { message } = App.useApp();
-  const { authedFetch, logout } = useAdminStore((state) => ({
-    authedFetch: state.authedFetch,
-    logout: state.logout,
-  }));
+  const { authedFetch, logout } = useAdminStore(
+    useShallow((state) => ({
+      authedFetch: state.authedFetch,
+      logout: state.logout,
+    })),
+  );
 
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<AuditLog[]>([]);

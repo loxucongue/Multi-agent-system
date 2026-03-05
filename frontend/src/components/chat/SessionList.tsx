@@ -3,6 +3,7 @@
 import { ClockCircleOutlined, PlusOutlined } from "@ant-design/icons";
 import { Button, Empty, List, Skeleton, Space, Spin, Typography } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import { SESSION_HISTORY_KEY, type SessionHistoryItem, useChatStore } from "@/stores/sessionStore";
 
@@ -42,12 +43,14 @@ export default function SessionList() {
   const [creating, setCreating] = useState(false);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
 
-  const { sessionId, createSession, switchSession, isStreaming } = useChatStore((state) => ({
-    sessionId: state.sessionId,
-    createSession: state.createSession,
-    switchSession: state.switchSession,
-    isStreaming: state.isStreaming,
-  }));
+  const { sessionId, createSession, switchSession, isStreaming } = useChatStore(
+    useShallow((state) => ({
+      sessionId: state.sessionId,
+      createSession: state.createSession,
+      switchSession: state.switchSession,
+      isStreaming: state.isStreaming,
+    })),
+  );
 
   const refresh = useCallback(() => {
     setSessions(readHistory());

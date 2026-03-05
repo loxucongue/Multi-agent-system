@@ -11,6 +11,7 @@ import { Button, Layout, Menu, Spin, Typography } from "antd";
 import type { MenuProps } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { useShallow } from "zustand/react/shallow";
 
 import { useAdminStore } from "@/stores/adminStore";
 
@@ -29,10 +30,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const router = useRouter();
   const [hydrated, setHydrated] = useState(false);
 
-  const { token, logout } = useAdminStore((state) => ({
-    token: state.token,
-    logout: state.logout,
-  }));
+  const { token, logout } = useAdminStore(
+    useShallow((state) => ({
+      token: state.token,
+      logout: state.logout,
+    })),
+  );
 
   const isLoginPage = pathname === "/admin/login";
 

@@ -4,6 +4,7 @@ import { App, Button, Card, Form, Input, Modal, Popconfirm, Space, Table } from 
 import type { ColumnsType } from "antd/es/table";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useShallow } from "zustand/react/shallow";
 
 import { useAdminStore } from "@/stores/adminStore";
 
@@ -23,10 +24,12 @@ interface ConfigForm {
 export default function AdminConfigPage() {
   const router = useRouter();
   const { message } = App.useApp();
-  const { authedFetch, logout } = useAdminStore((state) => ({
-    authedFetch: state.authedFetch,
-    logout: state.logout,
-  }));
+  const { authedFetch, logout } = useAdminStore(
+    useShallow((state) => ({
+      authedFetch: state.authedFetch,
+      logout: state.logout,
+    })),
+  );
 
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<ConfigItem[]>([]);

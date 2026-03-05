@@ -1,6 +1,7 @@
 "use client";
 
 import { Button, Space } from "antd";
+import { useShallow } from "zustand/react/shallow";
 
 import { useChatStore } from "@/stores/sessionStore";
 
@@ -15,11 +16,13 @@ const QUICK_ITEMS = [
 ];
 
 export default function QuickButtons({ onSend }: QuickButtonsProps) {
-  const { messages, stage, isStreaming } = useChatStore((state) => ({
-    messages: state.messages,
-    stage: state.stage,
-    isStreaming: state.isStreaming,
-  }));
+  const { messages, stage, isStreaming } = useChatStore(
+    useShallow((state) => ({
+      messages: state.messages,
+      stage: state.stage,
+      isStreaming: state.isStreaming,
+    })),
+  );
 
   const shouldShow = messages.length === 0 || stage === "init";
   if (!shouldShow) {
