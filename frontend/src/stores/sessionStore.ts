@@ -1,4 +1,4 @@
-import { create } from "zustand";
+﻿import { create } from "zustand";
 
 import { apiRequest } from "@/services/api";
 import type {
@@ -162,8 +162,8 @@ const deriveSessionTitle = (text: string): string => {
   const days = daysMatch?.[1];
 
   const destinationMatch =
-    normalized.match(/去\s*([一-龥A-Za-z]{2,12})/) ??
-    normalized.match(/([一-龥A-Za-z]{2,12})(?:旅游|跟团|自由行|行程)/);
+    normalized.match(/去\s*([\u4e00-\u9fa5A-Za-z]{2,12})/) ??
+    normalized.match(/([\u4e00-\u9fa5A-Za-z]{2,12})(?:旅游|跟团|自由行|行程)/);
   const destination = destinationMatch?.[1];
 
   if (destination && days) {
@@ -441,3 +441,4 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }));
   },
 }));
+

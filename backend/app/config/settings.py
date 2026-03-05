@@ -8,8 +8,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Typed application settings from .env and process environment."""
 
-    DATABASE_URL: str
-    REDIS_URL: str
+    DATABASE_URL: str = "mysql+aiomysql://root:root@127.0.0.1:3306/travel_db"
+    REDIS_URL: str = "redis://127.0.0.1:6379/0"
 
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_MODEL: str = "deepseek-chat"

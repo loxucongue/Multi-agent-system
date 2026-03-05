@@ -65,10 +65,27 @@ class ServiceContainer:
             self._session_factory = async_session_factory
             self._redis = redis_client
 
-            self._coze_client = CozeClient.from_settings()
+            if not settings.DEEPSEEK_API_KEY.strip():
+                self._logger.warning("DEEPSEEK_API_KEY not set, LLM calls will fail")
             self._llm_client = LLMClient.from_settings()
-            self._workflow_service = WorkflowService(client=self._coze_client, settings=settings)
-            self._kb_admin_service = KBAdminService(client=self._coze_client)
+
+            has_coze_credentials = all(
+                [
+                    settings.COZE_OAUTH_APP_ID.strip(),
+                    settings.COZE_KID.strip(),
+                    settings.COZE_PRIVATE_KEY_PATH.strip(),
+                ]
+            )
+            if has_coze_credentials:
+                self._coze_client = CozeClient.from_settings()
+                self._workflow_service = WorkflowService(client=self._coze_client, settings=settings)
+                self._kb_admin_service = KBAdminService(client=self._coze_client)
+            else:
+                self._logger.warning("Coze credentials not configured, skipping CozeClient init")
+                self._coze_client = None
+                self._workflow_service = None
+                self._kb_admin_service = None
+
             self._route_service = RouteService(session_factory=self._session_factory, redis=self._redis)
             self._session_service = SessionService(session_factory=self._session_factory, redis=self._redis)
             self._lead_service = LeadService(

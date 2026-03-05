@@ -9,11 +9,7 @@ interface QuickButtonsProps {
   onSend: (text: string) => Promise<void> | void;
 }
 
-const QUICK_ITEMS = [
-  "推荐旅游线路",
-  "签证咨询",
-  "查看价格和团期",
-];
+const QUICK_ITEMS = ["推荐旅游线路", "签证咨询", "查看价格和团期"];
 
 export default function QuickButtons({ onSend }: QuickButtonsProps) {
   const { messages, stage, isStreaming } = useChatStore(

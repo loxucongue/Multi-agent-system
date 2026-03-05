@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { App, Button, Card, Input, List, Modal, Space, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -39,8 +39,8 @@ export default function AdminPromptsPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const handleAuthError = (error: unknown) => {
-    const text = error instanceof Error ? error.message : "璇锋眰澶辫触";
-    if (text.includes("鐧诲綍宸茶繃鏈?)) {
+    const text = error instanceof Error ? error.message : "请求失败";
+    if (text.includes("登录已过期")) {
       logout();
       router.replace("/admin/login");
       return;
@@ -91,30 +91,30 @@ export default function AdminPromptsPage() {
 
   const columns: ColumnsType<PromptVersion> = useMemo(
     () => [
-      { title: "鐗堟湰", dataIndex: "version", key: "version", width: 90 },
+      { title: "版本", dataIndex: "version", key: "version", width: 90 },
       {
-        title: "鐘舵€?,
+        title: "状态",
         dataIndex: "is_active",
         key: "is_active",
         width: 120,
         render: (active: boolean) => (active ? <Tag color="green">active</Tag> : <Tag>inactive</Tag>),
       },
       {
-        title: "鍐呭棰勮",
+        title: "内容预览",
         dataIndex: "content",
         key: "content",
         ellipsis: true,
-        render: (value: string) => <Text>{value.slice(0, 80)}</Text>,
+        render: (value: string) => <Text>{value.slice(0, 100)}</Text>,
       },
       {
-        title: "鍒涘缓鏃堕棿",
+        title: "创建时间",
         dataIndex: "created_at",
         key: "created_at",
-        width: 190,
+        width: 200,
         render: (value: string) => new Date(value).toLocaleString("zh-CN"),
       },
       {
-        title: "鎿嶄綔",
+        title: "操作",
         key: "actions",
         width: 130,
         render: (_, row) => (
@@ -129,7 +129,7 @@ export default function AdminPromptsPage() {
                   await authedFetch(`/admin/prompts/${encodeURIComponent(row.node_name)}/${row.version}/activate`, {
                     method: "PUT",
                   });
-                  message.success("鐗堟湰宸叉縺娲?);
+                  message.success("版本已激活");
                   await loadVersions(row.node_name);
                   await loadNodes();
                 } catch (error) {
@@ -138,7 +138,8 @@ export default function AdminPromptsPage() {
               })();
             }}
           >
-            婵€娲?          </Button>
+            激活
+          </Button>
         ),
       },
     ],
@@ -148,31 +149,20 @@ export default function AdminPromptsPage() {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 12, minHeight: "calc(100vh - 120px)" }}>
       <Card
-        title="鑺傜偣鍒楄〃"
+        title="节点列表"
         loading={loadingNodes}
         extra={
-          <Button
-            size="small"
-            onClick={() => {
-              void loadNodes();
-            }}
-          >
-            鍒锋柊
+          <Button size="small" onClick={() => void loadNodes()}>
+            刷新
           </Button>
         }
       >
         <List
           dataSource={nodeNames}
-          locale={{ emptyText: "鏆傛棤鑺傜偣" }}
+          locale={{ emptyText: "暂无节点" }}
           renderItem={(name) => (
             <List.Item style={{ paddingInline: 0 }}>
-              <Button
-                type={selectedNode === name ? "primary" : "default"}
-                block
-                onClick={() => {
-                  setSelectedNode(name);
-                }}
-              >
+              <Button type={selectedNode === name ? "primary" : "default"} block onClick={() => setSelectedNode(name)}>
                 {name}
               </Button>
             </List.Item>
@@ -181,27 +171,14 @@ export default function AdminPromptsPage() {
       </Card>
 
       <Card
-        title={selectedNode ? `鐗堟湰鍒楄〃 路 ${selectedNode}` : "鐗堟湰鍒楄〃"}
+        title={selectedNode ? `版本列表 · ${selectedNode}` : "版本列表"}
         extra={
           <Space>
-            <Button
-              disabled={!selectedNode}
-              onClick={() => {
-                if (selectedNode) {
-                  void loadVersions(selectedNode);
-                }
-              }}
-            >
-              鍒锋柊
+            <Button disabled={!selectedNode} onClick={() => selectedNode && void loadVersions(selectedNode)}>
+              刷新
             </Button>
-            <Button
-              type="primary"
-              disabled={!selectedNode}
-              onClick={() => {
-                setCreateOpen(true);
-              }}
-            >
-              鏂板缓鐗堟湰
+            <Button type="primary" disabled={!selectedNode} onClick={() => setCreateOpen(true)}>
+              新建版本
             </Button>
           </Space>
         }
@@ -217,7 +194,7 @@ export default function AdminPromptsPage() {
       </Card>
 
       <Modal
-        title={`鏂板缓鐗堟湰${selectedNode ? ` 路 ${selectedNode}` : ""}`}
+        title={selectedNode ? `新建版本 · ${selectedNode}` : "新建版本"}
         open={createOpen}
         onCancel={() => {
           if (!submitting) {
@@ -227,7 +204,7 @@ export default function AdminPromptsPage() {
         }}
         onOk={() => {
           if (!selectedNode || !newContent.trim()) {
-            message.warning("璇疯緭鍏ュ唴瀹?);
+            message.warning("请输入内容");
             return;
           }
           void (async () => {
@@ -237,7 +214,7 @@ export default function AdminPromptsPage() {
                 method: "POST",
                 body: JSON.stringify({ content: newContent }),
               });
-              message.success("鏂扮増鏈凡鍒涘缓");
+              message.success("新版本已创建");
               setCreateOpen(false);
               setNewContent("");
               await loadVersions(selectedNode);
@@ -256,10 +233,9 @@ export default function AdminPromptsPage() {
           value={newContent}
           onChange={(event) => setNewContent(event.target.value)}
           rows={10}
-          placeholder="璇疯緭鍏?Prompt 鍐呭"
+          placeholder="请输入 Prompt 内容"
         />
       </Modal>
     </div>
   );
 }
-

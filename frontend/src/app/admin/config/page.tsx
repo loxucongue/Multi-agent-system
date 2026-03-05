@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { App, Button, Card, Form, Input, Modal, Popconfirm, Space, Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -39,8 +39,8 @@ export default function AdminConfigPage() {
   const [form] = Form.useForm<ConfigForm>();
 
   const handleAuthError = (error: unknown) => {
-    const text = error instanceof Error ? error.message : "璇锋眰澶辫触";
-    if (text.includes("鐧诲綍宸茶繃鏈?)) {
+    const text = error instanceof Error ? error.message : "请求失败";
+    if (text.includes("登录已过期")) {
       logout();
       router.replace("/admin/login");
       return;
@@ -78,7 +78,7 @@ export default function AdminConfigPage() {
         render: (value: string | undefined) => (value ? new Date(value).toLocaleString("zh-CN") : "-"),
       },
       {
-        title: "鎿嶄綔",
+        title: "操作",
         key: "actions",
         width: 170,
         render: (_, row) => (
@@ -95,15 +95,15 @@ export default function AdminConfigPage() {
                 setOpen(true);
               }}
             >
-              缂栬緫
+              编辑
             </Button>
             <Popconfirm
-              title={`纭鍒犻櫎 ${row.key} ?`}
+              title={`确认删除 ${row.key} ?`}
               onConfirm={() => {
                 void (async () => {
                   try {
                     await authedFetch(`/admin/config/${encodeURIComponent(row.key)}`, { method: "DELETE" });
-                    message.success("宸插垹闄?);
+                    message.success("已删除");
                     await loadData();
                   } catch (error) {
                     handleAuthError(error);
@@ -112,7 +112,7 @@ export default function AdminConfigPage() {
               }}
             >
               <Button size="small" danger>
-                鍒犻櫎
+                删除
               </Button>
             </Popconfirm>
           </Space>
@@ -124,10 +124,10 @@ export default function AdminConfigPage() {
 
   return (
     <Card
-      title="绯荤粺閰嶇疆"
+      title="系统配置"
       extra={
         <Space>
-          <Button onClick={() => void loadData()}>鍒锋柊</Button>
+          <Button onClick={() => void loadData()}>刷新</Button>
           <Button
             type="primary"
             onClick={() => {
@@ -136,7 +136,7 @@ export default function AdminConfigPage() {
               setOpen(true);
             }}
           >
-            鏂板
+            新增
           </Button>
         </Space>
       }
@@ -150,7 +150,7 @@ export default function AdminConfigPage() {
       />
 
       <Modal
-        title={editing ? `缂栬緫閰嶇疆 路 ${editing.key}` : "鏂板閰嶇疆"}
+        title={editing ? `编辑配置 · ${editing.key}` : "新增配置"}
         open={open}
         onCancel={() => {
           if (!submitting) {
@@ -169,7 +169,7 @@ export default function AdminConfigPage() {
                   description: values.description ?? null,
                 }),
               });
-              message.success("淇濆瓨鎴愬姛");
+              message.success("保存成功");
               setOpen(false);
               form.resetFields();
               await loadData();
@@ -184,26 +184,17 @@ export default function AdminConfigPage() {
         destroyOnHidden
       >
         <Form form={form} layout="vertical">
-          <Form.Item
-            label="Key"
-            name="key"
-            rules={[{ required: true, message: "璇疯緭鍏?key" }]}
-          >
+          <Form.Item label="Key" name="key" rules={[{ required: true, message: "请输入 key" }]}>
             <Input disabled={Boolean(editing)} placeholder="SESSION_CONTEXT_TURNS" />
           </Form.Item>
-          <Form.Item
-            label="Value"
-            name="value"
-            rules={[{ required: true, message: "璇疯緭鍏?value" }]}
-          >
+          <Form.Item label="Value" name="value" rules={[{ required: true, message: "请输入 value" }]}>
             <Input placeholder="8" />
           </Form.Item>
           <Form.Item label="Description" name="description">
-            <Input placeholder="閰嶇疆璇存槑锛堝彲閫夛級" />
+            <Input placeholder="配置说明（可选）" />
           </Form.Item>
         </Form>
       </Modal>
     </Card>
   );
 }
-

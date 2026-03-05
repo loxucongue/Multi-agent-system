@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { App, Button, Form, Input, Modal, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
@@ -8,7 +8,6 @@ import { API_BASE_URL } from "@/services/api";
 import { useChatStore } from "@/stores/sessionStore";
 
 const { Link, Text } = Typography;
-
 const PHONE_REGEX = /^1[3-9]\d{9}$/;
 
 interface LeadModalProps {
@@ -48,11 +47,11 @@ export default function LeadModal({ open, onClose }: LeadModalProps) {
   const handlePhoneChange = (value: string) => {
     const next = value.replace(/\s+/g, "");
     setPhone(next);
-    if (next.length === 0) {
+    if (!next) {
       setErrorText(null);
       return;
     }
-    setErrorText(PHONE_REGEX.test(next) ? null : "璇疯緭鍏ユ纭殑 11 浣嶆墜鏈哄彿");
+    setErrorText(PHONE_REGEX.test(next) ? null : "请输入正确的 11 位手机号");
   };
 
   const closeModal = () => {
@@ -62,17 +61,16 @@ export default function LeadModal({ open, onClose }: LeadModalProps) {
 
   const handleSubmit = async () => {
     if (leadStatus === "captured") {
-      message.info("鎮ㄥ凡鎻愪氦杩囪仈绯绘柟寮?);
+      message.info("您已提交过联系方式");
       closeModal();
       return;
     }
-
     if (!sessionId) {
-      setErrorText("浼氳瘽涓嶅瓨鍦紝璇峰埛鏂板悗閲嶈瘯");
+      setErrorText("会话不存在，请刷新后重试");
       return;
     }
     if (!isValidPhone) {
-      setErrorText("璇疯緭鍏ユ纭殑 11 浣嶆墜鏈哄彿");
+      setErrorText("请输入正确的 11 位手机号");
       return;
     }
 
@@ -82,40 +80,32 @@ export default function LeadModal({ open, onClose }: LeadModalProps) {
     try {
       const response = await fetch(`${API_BASE_URL}/session/${sessionId}/lead`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: normalizedPhone }),
       });
 
       if (response.ok) {
-        message.success("鎻愪氦鎴愬姛");
-        useChatStore.setState({
-          leadStatus: "captured",
-          showLeadModal: false,
-        });
+        message.success("提交成功");
+        useChatStore.setState({ leadStatus: "captured", showLeadModal: false });
         onClose();
         return;
       }
 
       if (response.status === 409) {
-        message.info("鎮ㄥ凡鎻愪氦杩囪仈绯绘柟寮?);
-        useChatStore.setState({
-          leadStatus: "captured",
-          showLeadModal: false,
-        });
+        message.info("您已提交过联系方式");
+        useChatStore.setState({ leadStatus: "captured", showLeadModal: false });
         onClose();
         return;
       }
 
       if (response.status === 422) {
-        setErrorText("鎵嬫満鍙锋牸寮忎笉姝ｇ‘");
+        setErrorText("手机号格式不正确");
         return;
       }
 
-      setErrorText("鎻愪氦澶辫触锛岃绋嶅悗閲嶈瘯");
+      setErrorText("提交失败，请稍后重试");
     } catch {
-      setErrorText("缃戠粶寮傚父锛岃绋嶅悗閲嶈瘯");
+      setErrorText("网络异常，请稍后重试");
     } finally {
       setSubmitting(false);
     }
@@ -123,7 +113,7 @@ export default function LeadModal({ open, onClose }: LeadModalProps) {
 
   return (
     <Modal
-      title="鐣欎笅鑱旂郴鏂瑰紡锛岄【闂负鎮ㄥ畾鍒惰绋?
+      title="留下联系方式，顾问为您定制行程"
       open={open && leadStatus !== "captured"}
       onCancel={closeModal}
       footer={null}
@@ -135,7 +125,7 @@ export default function LeadModal({ open, onClose }: LeadModalProps) {
     >
       <Form layout="vertical" onFinish={() => void handleSubmit()}>
         <Form.Item
-          label="鎵嬫満鍙?
+          label="手机号"
           validateStatus={errorText ? "error" : undefined}
           help={errorText ?? " "}
           required
@@ -143,14 +133,14 @@ export default function LeadModal({ open, onClose }: LeadModalProps) {
           <Input
             value={phone}
             maxLength={11}
-            placeholder="璇疯緭鍏ユ墜鏈哄彿"
+            placeholder="请输入手机号"
             onChange={(event) => handlePhoneChange(event.target.value)}
             disabled={submitting}
           />
         </Form.Item>
 
         <Button type="primary" htmlType="submit" loading={submitting} disabled={!canSubmit} block>
-          鎻愪氦
+          提交
         </Button>
       </Form>
 
@@ -162,13 +152,14 @@ export default function LeadModal({ open, onClose }: LeadModalProps) {
             }
           }}
         >
-          鏆傛椂涓嶉渶瑕?        </Link>
+          暂时不需要
+        </Link>
         <div style={{ marginTop: 8 }}>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            鎴戜滑浠呯敤浜庤绋嬫矡閫氾紝涓嶄細鐢ㄤ簬鍏朵粬鐢ㄩ€?          </Text>
+            我们仅用于行程沟通，不会用于其他用途
+          </Text>
         </div>
       </div>
     </Modal>
   );
 }
-

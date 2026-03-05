@@ -67,10 +67,7 @@ async def compare_routes(
 async def _get_batch_items(route_ids: list[int]) -> list[RouteBatchItem]:
     """Fetch route batch details from route service."""
 
-    route_service = services.route_service
-    if hasattr(route_service, "get_batch_details"):
-        return await route_service.get_batch_details(route_ids)
-    return await route_service.get_routes_batch(route_ids)
+    return await services.route_service.get_routes_batch(route_ids)
 
 
 def _to_compare_item(item: RouteBatchItem) -> CompareRouteItem:

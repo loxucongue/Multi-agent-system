@@ -6,8 +6,7 @@ import type { RouteCard } from "@/types";
 
 const { Paragraph, Text, Title } = Typography;
 
-export interface ActiveRouteCardData
-  extends Pick<RouteCard, "id" | "name" | "tags" | "summary"> {
+export interface ActiveRouteCardData extends Pick<RouteCard, "id" | "name" | "tags" | "summary"> {
   supplier: string;
   days: number;
   highlights: string[];
@@ -83,9 +82,7 @@ export default function ActiveRouteCard({
 
         <div>
           <Text strong>摘要</Text>
-          <Paragraph style={{ marginBottom: 0, marginTop: 8 }}>
-            {route.summary}
-          </Paragraph>
+          <Paragraph style={{ marginBottom: 0, marginTop: 8 }}>{route.summary}</Paragraph>
         </div>
 
         <Space wrap>

@@ -19,12 +19,12 @@ const formatPriceRange = (card: RouteCard): string => {
     return "价格待更新";
   }
   if (card.price_min !== null && card.price_max !== null) {
-    return `¥${card.price_min} - ¥${card.price_max}`;
+    return `￥${card.price_min} - ￥${card.price_max}`;
   }
   if (card.price_min !== null) {
-    return `¥${card.price_min} 起`;
+    return `￥${card.price_min} 起`;
   }
-  return `最高 ¥${card.price_max}`;
+  return `最高 ￥${card.price_max}`;
 };
 
 export default function CandidateCards({
@@ -107,10 +107,7 @@ export default function CandidateCards({
               }
             >
               <Space direction="vertical" size={10} style={{ width: "100%" }}>
-                <Paragraph
-                  ellipsis={{ rows: 2, tooltip: card.summary }}
-                  style={{ minHeight: 44, marginBottom: 0 }}
-                >
+                <Paragraph ellipsis={{ rows: 2, tooltip: card.summary }} style={{ minHeight: 44, marginBottom: 0 }}>
                   {card.summary}
                 </Paragraph>
 

@@ -24,7 +24,15 @@ async def response_generation_node(state: GraphState) -> dict[str, Any]:
         tool_results = {}
 
     existing_text = str(state.get("response_text") or "").strip()
-    response_text = existing_text or await _generate_text(intent, tool_results, user_message, state)
+    reuse_existing_text = _should_reuse_existing_text(
+        intent=intent,
+        tool_results=tool_results,
+    )
+    response_text = (
+        existing_text
+        if existing_text and reuse_existing_text
+        else await _generate_text(intent, tool_results, user_message, state)
+    )
 
     ui_actions = _build_ui_actions(intent, tool_results, state)
     cards = _build_cards(intent, tool_results)
@@ -36,6 +44,20 @@ async def response_generation_node(state: GraphState) -> dict[str, Any]:
         "cards": cards,
         "state_patches": state_patches,
     }
+
+
+def _should_reuse_existing_text(intent: str, tool_results: dict[str, Any]) -> bool:
+    """Whether response node should keep upstream response_text as final output."""
+
+    # In route recommendation flow, collect node may set an acknowledgement text.
+    # Once DB-enriched recommendation payload is present, we should regenerate
+    # final answer instead of reusing the acknowledgement.
+    if intent == "route_recommend":
+        if isinstance(tool_results.get("route_details"), list) and tool_results.get("route_details"):
+            return False
+        if isinstance(tool_results.get("candidates"), list) and tool_results.get("candidates"):
+            return False
+    return True
 
 
 async def _generate_text(
