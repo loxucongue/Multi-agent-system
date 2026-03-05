@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Alert, Button, Spin } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -18,7 +18,7 @@ import type { CompareData, SessionDetailResponse } from "@/types";
 import { useSSE } from "@/hooks/useSSE";
 
 const deriveDays = (summary: string): number => {
-  const match = summary.match(/(\d{1,2})\s*天/);
+  const match = summary.match(/(\d{1,2})\s*澶?);
   if (!match) {
     return 0;
   }
@@ -27,11 +27,11 @@ const deriveDays = (summary: string): number => {
 
 const deriveHighlights = (summary: string): string[] => {
   const parts = summary
-    .split(/[，。；、,.!！?？]/)
+    .split(/[锛屻€傦紱銆?.!锛?锛焆/)
     .map((item) => item.trim())
     .filter((item) => item.length >= 4);
   if (parts.length === 0) {
-    return ["行程亮点待确认"];
+    return ["琛岀▼浜偣寰呯‘璁?];
   }
   return parts.slice(0, 5);
 };
@@ -103,11 +103,11 @@ export default function ChatPage() {
           if (response.status === 404 || response.status === 410) {
             window.localStorage.removeItem(CURRENT_SESSION_KEY);
           } else if (!cancelled) {
-            setError("恢复会话失败，已为您创建新会话");
+            setError("鎭㈠浼氳瘽澶辫触锛屽凡涓烘偍鍒涘缓鏂颁細璇?);
           }
         } catch {
           if (!cancelled) {
-            setError("恢复会话失败，已为您创建新会话");
+            setError("鎭㈠浼氳瘽澶辫触锛屽凡涓烘偍鍒涘缓鏂颁細璇?);
           }
         }
       }
@@ -119,7 +119,7 @@ export default function ChatPage() {
         }
       } catch {
         if (!cancelled) {
-          setError("创建会话失败，请刷新后重试");
+          setError("鍒涘缓浼氳瘽澶辫触锛岃鍒锋柊鍚庨噸璇?);
         }
       } finally {
         if (!cancelled) {
@@ -155,7 +155,7 @@ export default function ChatPage() {
   const handleCompare = useCallback(
     async (routeIds: number[]) => {
       if (!sessionId) {
-        setError("会话不存在，请刷新页面重试");
+        setError("浼氳瘽涓嶅瓨鍦紝璇峰埛鏂伴〉闈㈤噸璇?);
         return;
       }
 
@@ -167,7 +167,7 @@ export default function ChatPage() {
         setCompareData(compare);
         setCompareDrawerVisible(true);
       } catch {
-        setError("获取对比数据失败，请稍后重试");
+        setError("鑾峰彇瀵规瘮鏁版嵁澶辫触锛岃绋嶅悗閲嶈瘯");
       }
     },
     [sessionId, setCompareData, setCompareDrawerVisible, setError],
@@ -188,7 +188,7 @@ export default function ChatPage() {
       name: activeRoute.name,
       tags: activeRoute.tags,
       summary: activeRoute.summary,
-      supplier: "平台精选",
+      supplier: "骞冲彴绮鹃€?,
       days,
       highlights: deriveHighlights(activeRoute.summary),
     };
@@ -210,7 +210,7 @@ export default function ChatPage() {
     return (
       <ChatLayout>
         <div className="flex h-full items-center justify-center">
-          <Spin description="正在恢复会话..." />
+          <Spin description="姝ｅ湪鎭㈠浼氳瘽..." />
         </div>
       </ChatLayout>
     );
@@ -227,10 +227,10 @@ export default function ChatPage() {
               <Alert
                 type="error"
                 showIcon
-                message={error}
+                title={error}
                 action={
                   <Button size="small" disabled={!lastUserMessage || isStreaming} onClick={() => void handleRetry()}>
-                    重试
+                    閲嶈瘯
                   </Button>
                 }
               />
@@ -247,18 +247,18 @@ export default function ChatPage() {
               activeRouteId={activeRouteId}
               route={activeRouteCard}
               onViewPriceSchedule={() => {
-                void handleSend("帮我查一下这条线路的价格和团期");
+                void handleSend("甯垜鏌ヤ竴涓嬭繖鏉＄嚎璺殑浠锋牸鍜屽洟鏈?);
               }}
               onViewItinerary={(route) => {
                 const index = routeCards.findIndex((card) => card.id === route.id);
                 const prompt =
-                  index >= 0 ? `我想了解第${index + 1}条线路的详细行程` : "我想了解这条线路的详细行程";
+                  index >= 0 ? `鎴戞兂浜嗚В绗?{index + 1}鏉＄嚎璺殑璇︾粏琛岀▼` : "鎴戞兂浜嗚В杩欐潯绾胯矾鐨勮缁嗚绋?;
                 void handleSend(prompt);
               }}
               onAddCompare={(route) => {
                 const ids = [route.id, ...candidateRouteIds.filter((id) => id !== route.id)].slice(0, 2);
                 if (ids.length < 2) {
-                  setError("至少需要两条线路进行对比");
+                  setError("鑷冲皯闇€瑕佷袱鏉＄嚎璺繘琛屽姣?);
                   return;
                 }
                 void handleCompare(ids);
@@ -269,7 +269,7 @@ export default function ChatPage() {
               cards={routeCards}
               onSelect={(routeId) => {
                 const index = routeCards.findIndex((card) => card.id === routeId);
-                const prompt = index >= 0 ? `我想了解第${index + 1}条线路的详情` : "我想了解这条线路的详情";
+                const prompt = index >= 0 ? `鎴戞兂浜嗚В绗?{index + 1}鏉＄嚎璺殑璇︽儏` : "鎴戞兂浜嗚В杩欐潯绾胯矾鐨勮鎯?;
                 void handleSend(prompt);
               }}
               onCompare={(routeIds) => {
@@ -297,3 +297,4 @@ export default function ChatPage() {
     </ChatLayout>
   );
 }
+

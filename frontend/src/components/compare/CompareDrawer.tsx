@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Button, Drawer, Empty, Space, Tag, Typography } from "antd";
 import { useState } from "react";
@@ -26,12 +26,12 @@ interface RowDef {
 const rowDefs: RowDef[] = [
   {
     key: "days",
-    label: "天数",
-    render: (item) => <Text>{item.days} 天</Text>,
+    label: "澶╂暟",
+    render: (item) => <Text>{item.days} 澶?/Text>,
   },
   {
     key: "highlights",
-    label: "亮点",
+    label: "浜偣",
     render: (item) => (
       <Space wrap>
         {item.highlights.map((highlight) => (
@@ -42,37 +42,37 @@ const rowDefs: RowDef[] = [
   },
   {
     key: "itinerary_style",
-    label: "行程风格",
+    label: "琛岀▼椋庢牸",
     render: (item) => <Text>{item.itinerary_style}</Text>,
   },
   {
     key: "price_range",
-    label: "价格区间",
+    label: "浠锋牸鍖洪棿",
     render: (item) => (
       <Text>{`${item.price_range.min} - ${item.price_range.max} ${item.price_range.currency}`}</Text>
     ),
   },
   {
     key: "next_schedule",
-    label: "最近团期",
-    render: (item) => <Text>{item.next_schedule.date ?? "暂无"}</Text>,
+    label: "鏈€杩戝洟鏈?,
+    render: (item) => <Text>{item.next_schedule.date ?? "鏆傛棤"}</Text>,
   },
   {
     key: "suitable_for",
-    label: "适合人群",
+    label: "閫傚悎浜虹兢",
     render: (item) => (
       <Space wrap>
         {item.suitable_for.length > 0 ? (
           item.suitable_for.map((v) => <Tag key={`${item.route_id}-${v}`}>{v}</Tag>)
         ) : (
-          <Text type="secondary">暂无</Text>
+          <Text type="secondary">鏆傛棤</Text>
         )}
       </Space>
     ),
   },
   {
     key: "included_summary",
-    label: "费用包含摘要",
+    label: "璐圭敤鍖呭惈鎽樿",
     render: (item) => (
       <Paragraph style={{ marginBottom: 0 }} ellipsis={{ rows: 3, tooltip: item.included_summary }}>
         {item.included_summary}
@@ -81,7 +81,7 @@ const rowDefs: RowDef[] = [
   },
   {
     key: "notice_summary",
-    label: "注意事项摘要",
+    label: "娉ㄦ剰浜嬮」鎽樿",
     render: (item) => (
       <Paragraph style={{ marginBottom: 0 }} ellipsis={{ rows: 3, tooltip: item.notice_summary }}>
         {item.notice_summary}
@@ -108,7 +108,7 @@ export default function CompareDrawer({ open, data, onClose }: CompareDrawerProp
     }
     setPendingRouteId(item.route_id);
     try {
-      const runId = await sendMessage(`我对 ${item.name} 感兴趣，想进一步了解`);
+      const runId = await sendMessage(`鎴戝 ${item.name} 鎰熷叴瓒ｏ紝鎯宠繘涓€姝ヤ簡瑙);
       if (runId) {
         connect(runId);
       }
@@ -121,13 +121,13 @@ export default function CompareDrawer({ open, data, onClose }: CompareDrawerProp
     <Drawer
       open={open}
       onClose={onClose}
-      width={720}
+      size="large"
       placement="right"
-      title="线路对比"
+      title="绾胯矾瀵规瘮"
       styles={{ body: { paddingBottom: 96 } }}
     >
       {routes.length === 0 ? (
-        <Empty description="暂无对比数据" />
+        <Empty description="鏆傛棤瀵规瘮鏁版嵁" />
       ) : (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
@@ -142,7 +142,7 @@ export default function CompareDrawer({ open, data, onClose }: CompareDrawerProp
                     minWidth: 130,
                   }}
                 >
-                  对比维度
+                  瀵规瘮缁村害
                 </th>
                 {routes.map((item) => (
                   <th
@@ -210,8 +210,7 @@ export default function CompareDrawer({ open, data, onClose }: CompareDrawerProp
                   void handleInterest(item);
                 }}
               >
-                我对 {item.name} 感兴趣
-              </Button>
+                鎴戝 {item.name} 鎰熷叴瓒?              </Button>
             ))}
           </div>
         </div>
@@ -219,3 +218,4 @@ export default function CompareDrawer({ open, data, onClose }: CompareDrawerProp
     </Drawer>
   );
 }
+

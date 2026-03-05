@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { App, Button, Form, Input, Modal, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
@@ -52,7 +52,7 @@ export default function LeadModal({ open, onClose }: LeadModalProps) {
       setErrorText(null);
       return;
     }
-    setErrorText(PHONE_REGEX.test(next) ? null : "请输入正确的 11 位手机号");
+    setErrorText(PHONE_REGEX.test(next) ? null : "璇疯緭鍏ユ纭殑 11 浣嶆墜鏈哄彿");
   };
 
   const closeModal = () => {
@@ -62,17 +62,17 @@ export default function LeadModal({ open, onClose }: LeadModalProps) {
 
   const handleSubmit = async () => {
     if (leadStatus === "captured") {
-      message.info("您已提交过联系方式");
+      message.info("鎮ㄥ凡鎻愪氦杩囪仈绯绘柟寮?);
       closeModal();
       return;
     }
 
     if (!sessionId) {
-      setErrorText("会话不存在，请刷新后重试");
+      setErrorText("浼氳瘽涓嶅瓨鍦紝璇峰埛鏂板悗閲嶈瘯");
       return;
     }
     if (!isValidPhone) {
-      setErrorText("请输入正确的 11 位手机号");
+      setErrorText("璇疯緭鍏ユ纭殑 11 浣嶆墜鏈哄彿");
       return;
     }
 
@@ -89,7 +89,7 @@ export default function LeadModal({ open, onClose }: LeadModalProps) {
       });
 
       if (response.ok) {
-        message.success("提交成功");
+        message.success("鎻愪氦鎴愬姛");
         useChatStore.setState({
           leadStatus: "captured",
           showLeadModal: false,
@@ -99,7 +99,7 @@ export default function LeadModal({ open, onClose }: LeadModalProps) {
       }
 
       if (response.status === 409) {
-        message.info("您已提交过联系方式");
+        message.info("鎮ㄥ凡鎻愪氦杩囪仈绯绘柟寮?);
         useChatStore.setState({
           leadStatus: "captured",
           showLeadModal: false,
@@ -109,13 +109,13 @@ export default function LeadModal({ open, onClose }: LeadModalProps) {
       }
 
       if (response.status === 422) {
-        setErrorText("手机号格式不正确");
+        setErrorText("鎵嬫満鍙锋牸寮忎笉姝ｇ‘");
         return;
       }
 
-      setErrorText("提交失败，请稍后重试");
+      setErrorText("鎻愪氦澶辫触锛岃绋嶅悗閲嶈瘯");
     } catch {
-      setErrorText("网络异常，请稍后重试");
+      setErrorText("缃戠粶寮傚父锛岃绋嶅悗閲嶈瘯");
     } finally {
       setSubmitting(false);
     }
@@ -123,19 +123,19 @@ export default function LeadModal({ open, onClose }: LeadModalProps) {
 
   return (
     <Modal
-      title="留下联系方式，顾问为您定制行程"
+      title="鐣欎笅鑱旂郴鏂瑰紡锛岄【闂负鎮ㄥ畾鍒惰绋?
       open={open && leadStatus !== "captured"}
       onCancel={closeModal}
       footer={null}
       centered
       width={400}
-      destroyOnClose
-      maskClosable={!submitting}
+      destroyOnHidden
+      mask={{ closable: !submitting }}
       closable={!submitting}
     >
       <Form layout="vertical" onFinish={() => void handleSubmit()}>
         <Form.Item
-          label="手机号"
+          label="鎵嬫満鍙?
           validateStatus={errorText ? "error" : undefined}
           help={errorText ?? " "}
           required
@@ -143,14 +143,14 @@ export default function LeadModal({ open, onClose }: LeadModalProps) {
           <Input
             value={phone}
             maxLength={11}
-            placeholder="请输入手机号"
+            placeholder="璇疯緭鍏ユ墜鏈哄彿"
             onChange={(event) => handlePhoneChange(event.target.value)}
             disabled={submitting}
           />
         </Form.Item>
 
         <Button type="primary" htmlType="submit" loading={submitting} disabled={!canSubmit} block>
-          提交
+          鎻愪氦
         </Button>
       </Form>
 
@@ -162,14 +162,13 @@ export default function LeadModal({ open, onClose }: LeadModalProps) {
             }
           }}
         >
-          暂时不需要
-        </Link>
+          鏆傛椂涓嶉渶瑕?        </Link>
         <div style={{ marginTop: 8 }}>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            我们仅用于行程沟通，不会用于其他用途
-          </Text>
+            鎴戜滑浠呯敤浜庤绋嬫矡閫氾紝涓嶄細鐢ㄤ簬鍏朵粬鐢ㄩ€?          </Text>
         </div>
       </div>
     </Modal>
   );
 }
+
