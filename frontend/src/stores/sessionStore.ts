@@ -21,30 +21,26 @@ export interface SessionHistoryItem {
 }
 
 export const SESSION_HISTORY_KEY = "travel_session_history_v1";
+export const CURRENT_SESSION_KEY = "travel_current_session_id";
 
 interface ChatStore {
-  // ─── 会话状态 ───
   sessionId: string | null;
   stage: SessionState["stage"];
   leadStatus: SessionState["lead_status"];
   activeRouteId: number | null;
   candidateRouteIds: number[];
 
-  // ─── 消息 ───
   messages: ChatMessage[];
   isStreaming: boolean;
   currentStreamText: string;
   error: string | null;
 
-  // ─── 路线卡片 ───
   routeCards: RouteCard[];
   compareData: CompareData | null;
 
-  // ─── UI 控制 ───
   showLeadModal: boolean;
   showCompareDrawer: boolean;
 
-  // ─── Actions ───
   createSession: () => Promise<string>;
   sendMessage: (text: string) => Promise<string | null>;
   appendToken: (token: string) => void;
@@ -53,6 +49,9 @@ interface ChatStore {
   setRouteCards: (cards: RouteCard[]) => void;
   handleUIAction: (action: UIAction) => void;
   setLeadModalVisible: (visible: boolean) => void;
+  setCompareDrawerVisible: (visible: boolean) => void;
+  setCompareData: (data: CompareData | null) => void;
+  hydrateSession: (detail: SessionDetailResponse) => void;
   switchSession: (sessionId: string) => Promise<void>;
   setError: (err: string | null) => void;
   reset: () => void;
@@ -75,12 +74,49 @@ interface StoreShape {
   showCompareDrawer: boolean;
 }
 
+const INITIAL_STATE: StoreShape = {
+  sessionId: null,
+  stage: "init",
+  leadStatus: "none",
+  activeRouteId: null,
+  candidateRouteIds: [],
+  messages: [],
+  isStreaming: false,
+  currentStreamText: "",
+  error: null,
+  routeCards: [],
+  compareData: null,
+  showLeadModal: false,
+  showCompareDrawer: false,
+};
+
 const createMessageId = (): string => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
-
   return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const toErrorMessage = (error: unknown): string => {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return "请求失败，请稍后重试";
+};
+
+const isCompareData = (value: unknown): value is CompareData => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const routes = (value as { routes?: unknown }).routes;
+  return Array.isArray(routes);
+};
+
+const parseRouteIds = (value: unknown): number[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is number => typeof item === "number");
 };
 
 const readSessionHistory = (): SessionHistoryItem[] => {
@@ -96,13 +132,7 @@ const readSessionHistory = (): SessionHistoryItem[] => {
     if (!Array.isArray(parsed)) {
       return [];
     }
-    return parsed.filter(
-      (item) =>
-        typeof item?.session_id === "string" &&
-        typeof item?.title === "string" &&
-        typeof item?.created_at === "number" &&
-        typeof item?.last_active_at === "number",
-    );
+    return parsed;
   } catch {
     return [];
   }
@@ -113,6 +143,13 @@ const writeSessionHistory = (items: SessionHistoryItem[]) => {
     return;
   }
   window.localStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(items));
+};
+
+const persistCurrentSessionId = (sessionId: string) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(CURRENT_SESSION_KEY, sessionId);
 };
 
 const deriveSessionTitle = (text: string): string => {
@@ -156,55 +193,32 @@ const upsertSessionHistory = (sessionId: string, userText?: string) => {
   }
 
   const current = items[idx];
-  const isDefaultTitle = current.title === "新的旅游咨询" || current.title === "未命名咨询";
+  const shouldReplaceTitle = current.title === "新的旅游咨询" || current.title === "未命名咨询";
   items[idx] = {
     ...current,
-    title: userText && isDefaultTitle ? nextTitle : current.title,
+    title: userText && shouldReplaceTitle ? nextTitle : current.title,
     last_active_at: now,
   };
 
-  const updated = [items[idx], ...items.filter((item) => item.session_id !== sessionId)];
-  writeSessionHistory(updated);
+  const reordered = [items[idx], ...items.filter((item) => item.session_id !== sessionId)];
+  writeSessionHistory(reordered);
 };
 
-const toErrorMessage = (error: unknown): string => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return "请求失败，请稍后重试";
-};
-
-const isCompareData = (value: unknown): value is CompareData => {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  const routes = (value as { routes?: unknown }).routes;
-  return Array.isArray(routes);
-};
-
-const parseRouteIds = (value: unknown): number[] => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter((item): item is number => typeof item === "number");
-};
-
-const INITIAL_STATE: StoreShape = {
-  sessionId: null,
-  stage: "init",
-  leadStatus: "none",
-  activeRouteId: null,
-  candidateRouteIds: [],
+const mapDetailToState = (detail: SessionDetailResponse): Partial<StoreShape> & { sessionId: string } => ({
+  sessionId: detail.session_id,
+  stage: detail.stage as SessionState["stage"],
+  leadStatus: detail.lead_status as SessionState["lead_status"],
+  activeRouteId: detail.active_route_id,
+  candidateRouteIds: detail.candidate_route_ids,
+  routeCards: detail.candidate_cards,
   messages: [],
-  isStreaming: false,
   currentStreamText: "",
+  isStreaming: false,
   error: null,
-  routeCards: [],
   compareData: null,
-  showLeadModal: false,
   showCompareDrawer: false,
-};
+  showLeadModal: false,
+});
 
 export const useChatStore = create<ChatStore>((set, get) => ({
   ...INITIAL_STATE,
@@ -214,8 +228,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       method: "POST",
     });
 
-    set({ sessionId: response.session_id });
+    persistCurrentSessionId(response.session_id);
     upsertSessionHistory(response.session_id);
+
+    set({
+      ...INITIAL_STATE,
+      sessionId: response.session_id,
+    });
+
     return response.session_id;
   },
 
@@ -245,12 +265,13 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         sessionId = await get().createSession();
       }
 
+      persistCurrentSessionId(sessionId);
+      upsertSessionHistory(sessionId, message);
+
       const payload: ChatSendRequest = {
         session_id: sessionId,
         message,
       };
-
-      upsertSessionHistory(sessionId, message);
 
       const response = await apiRequest<ChatSendResponse>("/chat/send", {
         method: "POST",
@@ -374,29 +395,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }));
   },
 
+  setCompareDrawerVisible: (visible: boolean) => {
+    set({ showCompareDrawer: visible });
+  },
+
+  setCompareData: (data: CompareData | null) => {
+    set({ compareData: data });
+  },
+
+  hydrateSession: (detail: SessionDetailResponse) => {
+    set(mapDetailToState(detail));
+    persistCurrentSessionId(detail.session_id);
+    upsertSessionHistory(detail.session_id);
+  },
+
   switchSession: async (sessionId: string) => {
     try {
       const detail = await apiRequest<SessionDetailResponse>(`/session/${sessionId}`);
-      set({
-        sessionId: detail.session_id,
-        stage: detail.stage as SessionState["stage"],
-        leadStatus: detail.lead_status as SessionState["lead_status"],
-        activeRouteId: detail.active_route_id,
-        candidateRouteIds: detail.candidate_route_ids,
-        routeCards: detail.candidate_cards,
-        messages: [],
-        currentStreamText: "",
-        isStreaming: false,
-        error: null,
-        compareData: null,
-        showCompareDrawer: false,
-        showLeadModal: false,
-      });
-      upsertSessionHistory(sessionId);
+      get().hydrateSession(detail);
     } catch (error) {
-      set({
-        error: toErrorMessage(error),
-      });
+      set({ error: toErrorMessage(error) });
     }
   },
 
