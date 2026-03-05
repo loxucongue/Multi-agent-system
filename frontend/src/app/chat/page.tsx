@@ -1,9 +1,12 @@
+import MessageList from "@/components/chat/MessageList";
 import ChatLayout from "@/components/chat/ChatLayout";
 
 export default function ChatPage() {
   return (
     <ChatLayout>
-      <div>聊天区域占位</div>
+      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <MessageList />
+      </div>
     </ChatLayout>
   );
 }
