@@ -1,13 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
+import { App as AntdApp, ConfigProvider } from "antd";
 
-interface ProvidersProps {
-  children: ReactNode;
-}
-
-export function Providers({ children }: ProvidersProps) {
-  return <ConfigProvider locale={zhCN}>{children}</ConfigProvider>;
+export default function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <ConfigProvider locale={zhCN} theme={{ token: { colorPrimary: "#1677ff" } }}>
+      <AntdApp>{children}</AntdApp>
+    </ConfigProvider>
+  );
 }
