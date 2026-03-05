@@ -101,8 +101,8 @@ class GraphState(TypedDict):
 
     active_route_id: int | None
     target_route_id: int | None
-    candidate_route_ids: Annotated[list[int], int_list_append_reducer]
-    excluded_route_ids: Annotated[list[int], int_list_append_reducer]
+    candidate_route_ids: list[int]
+    excluded_route_ids: list[int]
 
     user_profile: UserProfile
 
@@ -110,7 +110,7 @@ class GraphState(TypedDict):
     secondary_intent: IntentType | None
     followup_count: int
 
-    context_turns: Annotated[list[dict[str, str]], list_append_reducer]
+    context_turns: list[dict[str, str]]
     state_version: int
 
     trace_id: str
@@ -121,7 +121,7 @@ class GraphState(TypedDict):
 
     ui_actions: Annotated[list[dict[str, Any]], list_append_reducer]
     cards: Annotated[list[dict[str, Any]], list_append_reducer]
-    state_patches: Annotated[dict[str, Any], dict_merge_reducer]
+    state_patches: dict[str, Any]
 
     slots_ready: bool
     request_human: bool
