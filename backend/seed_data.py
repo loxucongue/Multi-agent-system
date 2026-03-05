@@ -16,7 +16,7 @@ from sqlalchemy import select
 from app.config.database import async_session_factory, engine
 from app.models.database import Route, RoutePricing, RouteSchedule
 
-_DEFAULT_EXCEL_PATH = Path(r"C:\Users\24159\Desktop\柯总-旅游智能体\8+51.xlsx")
+_DEFAULT_EXCEL_PATH = Path(__file__).parent / "data" / "seed_routes.xlsx"
 _EXPECTED_COLUMNS = {
     "basic_info",
     "highlights",
@@ -34,7 +34,7 @@ def _find_excel_path() -> Path:
 
     env_path = os.getenv("SEED_EXCEL_PATH", "").strip()
     if env_path:
-        candidate = Path(env_path)
+        candidate = Path(env_path).expanduser()
         if candidate.exists():
             return candidate
 

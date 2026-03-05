@@ -26,6 +26,7 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+backend/data/*.xlsx
 
 # IDE and OS
 .vscode/
