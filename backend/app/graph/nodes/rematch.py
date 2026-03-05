@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.graph.state import GraphState
+from app.graph.state import GraphState, STAGE_REMATCH_COLLECTING
 
 
 async def rematch_reset_node(state: GraphState) -> dict[str, Any]:
@@ -26,7 +26,8 @@ async def rematch_reset_node(state: GraphState) -> dict[str, Any]:
         "active_route_id": None,
         "candidate_route_ids": [],
         "followup_count": 0,
-        "from_rematch": True,
+        "stage": STAGE_REMATCH_COLLECTING,
+        "slots_ready": False,
     }
 
 

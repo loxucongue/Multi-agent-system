@@ -62,24 +62,32 @@ async def collect_requirements_node(state: GraphState) -> dict[str, Any]:
 
     profile = _ensure_profile(state.get("user_profile"))
     user_message = str(state.get("current_user_message") or "").strip()
+    last_intent = str(state.get("last_intent") or "")
     slots_ready = len(profile.destinations) > 0
-    in_rematch_collecting = (
-        state.get("stage") == STAGE_REMATCH_COLLECTING or bool(state.get("from_rematch"))
-    )
+    in_rematch_collecting = state.get("stage") == STAGE_REMATCH_COLLECTING
 
     if in_rematch_collecting:
+        if last_intent != "rematch":
+            response_text = "好的，我基于刚才确认的条件继续为您匹配新的线路。"
+            if slots_ready and not profile.days_range and not profile.budget_range:
+                response_text = f"{response_text}\n{_SOFT_GUIDE}"
+            return {
+                "user_profile": profile,
+                "slots_ready": slots_ready,
+                "response_text": response_text,
+                "stage": STAGE_COLLECTING,
+            }
+
         response_text = _build_rematch_confirmation_text(user_message=user_message, profile=profile)
         if slots_ready and not profile.days_range and not profile.budget_range:
             response_text = f"{response_text}\n{_SOFT_GUIDE}"
 
-        patch: dict[str, Any] = {
+        return {
             "user_profile": profile,
-            "slots_ready": slots_ready,
+            "slots_ready": False,
             "response_text": response_text,
+            "stage": STAGE_REMATCH_COLLECTING,
         }
-        if not slots_ready:
-            patch["stage"] = STAGE_COLLECTING
-        return patch
 
     if slots_ready:
         response_text = "好的，已收到您的需求，我这就为您筛选更匹配的线路。"

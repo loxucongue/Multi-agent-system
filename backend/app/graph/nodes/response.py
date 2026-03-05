@@ -46,6 +46,9 @@ async def _generate_text(
 ) -> str:
     """Generate final text from structured data using streaming LLM output."""
 
+    if str(state.get("error") or "").strip():
+        return "抱歉，获取信息时遇到了问题，请稍后再试。"
+
     # deterministic fallback when node already indicates error
     if tool_results.get("error"):
         return _fallback_text_from_tool_results(intent, tool_results)
@@ -172,8 +175,6 @@ def _build_state_patches(intent: str, tool_results: dict[str, Any], state: Graph
         if active_route_id is not None:
             patches["active_route_id"] = active_route_id
             patches["stage"] = STAGE_RECOMMENDED
-        if state.get("from_rematch"):
-            patches["from_rematch"] = False
 
     elif intent == "route_followup":
         selected_route_id = _to_int_or_none(tool_results.get("selected_route_id"))

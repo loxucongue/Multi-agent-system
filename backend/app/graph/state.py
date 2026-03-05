@@ -92,6 +92,7 @@ class GraphState(TypedDict):
     """Shared LangGraph runtime state."""
 
     messages: Annotated[list[AnyMessage], list_append_reducer]
+    session_id: str
     current_user_message: str
 
     stage: StageType
@@ -123,7 +124,6 @@ class GraphState(TypedDict):
     state_patches: Annotated[dict[str, Any], dict_merge_reducer]
 
     slots_ready: bool
-    from_rematch: bool
     request_human: bool
     error: str | None
 
@@ -141,6 +141,7 @@ def create_initial_state(
 
     return GraphState(
         messages=[HumanMessage(content=safe_message)] if safe_message else [],
+        session_id="",
         current_user_message=safe_message,
         stage=_normalize_stage(session_state.stage),
         lead_status=_normalize_lead_status(session_state.lead_status),
@@ -163,7 +164,6 @@ def create_initial_state(
         cards=[],
         state_patches={},
         slots_ready=bool(profile.destinations),
-        from_rematch=False,
         request_human=False,
         error=None,
     )
