@@ -6,8 +6,17 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
+from app.api.admin.auth import router as admin_auth_router
+from app.api.admin.config import router as admin_config_router
+from app.api.admin.kb import router as admin_kb_router
+from app.api.admin.logs import router as admin_logs_router
+from app.api.admin.prompts import router as admin_prompts_router
+from app.api.chat import router as chat_router
+from app.api.compare import router as compare_router
+from app.api.lead import router as lead_router
+from app.api.session import router as session_router
 from app.config.database import db_health_check
 from app.config.redis import redis_health_check
 from app.services.container import services
@@ -31,6 +40,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Travel Advisor Backend", lifespan=lifespan)
 
+app.include_router(chat_router, prefix="/chat", tags=["chat"])
+app.include_router(session_router, prefix="/session", tags=["session"])
+app.include_router(compare_router, prefix="/session", tags=["compare"])
+app.include_router(lead_router, prefix="/session", tags=["lead"])
+app.include_router(admin_auth_router, prefix="/admin", tags=["admin-auth"])
+app.include_router(admin_prompts_router, prefix="/admin/prompts", tags=["admin-prompts"])
+app.include_router(admin_kb_router, prefix="/admin/kb", tags=["admin-kb"])
+app.include_router(admin_logs_router, prefix="/admin/logs", tags=["admin-logs"])
+app.include_router(admin_config_router, prefix="/admin/config", tags=["admin-config"])
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -53,6 +72,21 @@ async def trace_middleware(
     response = await call_next(request)
     response.headers["X-Trace-Id"] = trace_id
     return response
+
+
+@app.exception_handler(ValueError)
+async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
+    """Return 422 for value errors."""
+
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+@app.exception_handler(Exception)
+async def generic_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Return 500 for unhandled exceptions."""
+
+    logger.exception("unhandled error")
+    return JSONResponse(status_code=500, content={"detail": "internal server error"})
 
 
 @app.get("/health")

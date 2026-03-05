@@ -1,1 +1,5 @@
-﻿"""Placeholder module."""
+﻿"""Session API router placeholder."""
+
+from fastapi import APIRouter
+
+router = APIRouter()

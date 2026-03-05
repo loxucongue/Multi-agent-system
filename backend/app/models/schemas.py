@@ -400,3 +400,62 @@ class CompareData(BaseModel):
     """Route comparison payload for frontend drawer."""
 
     routes: list[CompareRouteItem] = Field(default_factory=list)
+
+
+# ─────────────────────────────────────────────
+#  API request/response schemas
+# ─────────────────────────────────────────────
+
+
+class ChatSendRequest(BaseModel):
+    """Chat send request payload."""
+
+    session_id: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=1, max_length=2000)
+
+
+class ChatSendResponse(BaseModel):
+    """Chat send response payload."""
+
+    run_id: str
+    trace_id: str
+
+
+class SessionCreateResponse(BaseModel):
+    """Session creation response payload."""
+
+    session_id: str
+
+
+class SessionDetailResponse(BaseModel):
+    """Session detail response payload."""
+
+    session_id: str
+    stage: str
+    lead_status: str
+    active_route_id: int | None = None
+    candidate_route_ids: list[int] = Field(default_factory=list)
+    user_profile: dict[str, Any] = Field(default_factory=dict)
+    followup_count: int = 0
+    active_card: RouteCard | None = None
+    candidate_cards: list[RouteCard] = Field(default_factory=list)
+
+
+class CompareRequest(BaseModel):
+    """Compare request payload."""
+
+    route_ids: list[int] | None = None
+
+
+class AdminLoginRequest(BaseModel):
+    """Admin login request payload."""
+
+    username: str
+    password: str
+
+
+class AdminLoginResponse(BaseModel):
+    """Admin login response payload."""
+
+    access_token: str
+    token_type: str = "bearer"

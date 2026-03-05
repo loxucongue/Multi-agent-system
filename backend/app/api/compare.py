@@ -1,1 +1,5 @@
-﻿"""Placeholder module."""
+﻿"""Compare API router placeholder."""
+
+from fastapi import APIRouter
+
+router = APIRouter()
