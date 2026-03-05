@@ -112,9 +112,20 @@ async def _search_candidates(workflow_service: Any, query: str, trace_id: str) -
 def _hot_route_to_candidate(route_card: Any) -> dict[str, Any]:
     payload = route_card.model_dump() if hasattr(route_card, "model_dump") else dict(route_card)
     route_id = payload.get("id")
+    route_id_str = _to_int_str_or_none(route_id)
     return {
         "document_id": f"hot_route_{route_id}",
-        "route_id": str(route_id) if route_id is not None else None,
+        "route_id": route_id_str,
         "output": str(payload.get("summary") or ""),
         "hot_route": payload,
     }
+
+
+def _to_int_str_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        return str(int(value))
+    except (TypeError, ValueError):
+        _LOGGER.warning(f"hot route id is not int-convertible, id={value}")
+        return None

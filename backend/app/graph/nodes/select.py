@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.state import GraphState
+from app.utils.logger import get_logger
+
+_LOGGER = get_logger(__name__)
 
 
 async def select_candidates_node(state: GraphState) -> dict[str, Any]:
@@ -20,7 +23,13 @@ async def select_candidates_node(state: GraphState) -> dict[str, Any]:
     for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
-        route_id = _to_int_or_none(candidate.get("route_id"))
+        raw_route_id = candidate.get("route_id")
+        route_id = _to_int_or_none(raw_route_id)
+        if raw_route_id is not None and route_id is None:
+            _LOGGER.warning(
+                "candidate route_id is not int-convertible, skipped "
+                f"document_id={candidate.get('document_id')} raw_route_id={raw_route_id}"
+            )
         if route_id is None:
             continue
         if route_id in excluded_ids:

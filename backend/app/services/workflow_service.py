@@ -48,7 +48,7 @@ class WorkflowService:
         )
 
         debug_url = payload.get("debug_url")
-        candidates = self._parse_route_candidates(payload)
+        candidates = self._parse_route_candidates(payload, trace_id=trace_id)
 
         return RouteSearchResult(candidates=candidates, debug_url=debug_url)
 
@@ -159,7 +159,7 @@ class WorkflowService:
                 return raw_data
         return raw_data
 
-    def _parse_route_candidates(self, payload: dict[str, Any]) -> list[RouteCandidate]:
+    def _parse_route_candidates(self, payload: dict[str, Any], trace_id: str) -> list[RouteCandidate]:
         """Parse route search workflow output into candidate list."""
 
         parsed = self._parse_data_field(payload)
@@ -188,10 +188,19 @@ class WorkflowService:
             doc_id = item.get("documentId") or item.get("document_id")
             output_text = item.get("output", "")
             if doc_id:
-                route_id = self._extract_route_id(item, str(output_text))
-                if route_id is None:
+                raw_route_id = self._extract_route_id(item, str(output_text))
+                route_id: str | None = None
+                if raw_route_id is not None:
+                    try:
+                        route_id = str(int(str(raw_route_id).strip()))
+                    except (TypeError, ValueError):
+                        self._logger.warning(
+                            "invalid route_id from workflow candidate, "
+                            f"trace_id={trace_id} document_id={doc_id} raw_route_id={raw_route_id}"
+                        )
+                if route_id is None and raw_route_id is None:
                     self._logger.warning(
-                        f"route_id not found in route candidate output, document_id={doc_id}"
+                        f"route_id not found in route candidate output, trace_id={trace_id} document_id={doc_id}"
                     )
                 candidates.append(
                     RouteCandidate(
@@ -232,6 +241,14 @@ class WorkflowService:
             route_id_from_url = self._extract_route_id_from_url(file_url_match.group(1))
             if route_id_from_url:
                 return route_id_from_url
+
+        numeric_route_id_match = re.search(
+            r"(?:route_id|id)\s*[:：=]\s*(\d+)",
+            output_text,
+            flags=re.IGNORECASE,
+        )
+        if numeric_route_id_match:
+            return numeric_route_id_match.group(1)
 
         return None
 
