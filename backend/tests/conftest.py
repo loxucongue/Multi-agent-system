@@ -6,7 +6,7 @@ import asyncio
 import json
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -355,12 +355,115 @@ class FakeLeadService:
 
 
 @dataclass
+class FakeAuditLog:
+    """Simple audit log record model used by fake audit service."""
+
+    id: int
+    trace_id: str
+    run_id: str
+    session_id: str
+    intent: str
+    search_query: str | None
+    topk_results: Any
+    route_id: int | None
+    db_query_summary: str | None
+    api_params: dict[str, Any] | None
+    api_latency_ms: int | None
+    final_answer_summary: str | None
+    token_usage: dict[str, Any] | None
+    error_stack: str | None
+    coze_logid: str | None
+    coze_debug_url: str | None
+    created_at: datetime = field(default_factory=datetime.utcnow)
+
+
+class FakeAuditService:
+    """In-memory audit service with phone masking behavior."""
+
+    _phone_pattern = re.compile(r"(?<!\d)(1[3-9]\d{9})(?!\d)")
+
+    def __init__(self) -> None:
+        self._rows: list[FakeAuditLog] = []
+        self._next_id = 1
+
+    def _mask_value(self, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return self._phone_pattern.sub(lambda m: f"{m.group(1)[:3]}****{m.group(1)[-4:]}", value)
+        if isinstance(value, list):
+            return [self._mask_value(v) for v in value]
+        if isinstance(value, dict):
+            return {k: self._mask_value(v) for k, v in value.items()}
+        return value
+
+    async def log_request(
+        self,
+        trace_id: str,
+        run_id: str,
+        session_id: str,
+        intent: str,
+        search_query: str | None = None,
+        topk_results: list[dict[str, Any]] | dict[str, Any] | None = None,
+        route_id: int | None = None,
+        db_query_summary: str | None = None,
+        api_params: dict[str, Any] | None = None,
+        api_latency_ms: int | None = None,
+        final_answer_summary: str | None = None,
+        token_usage: dict[str, Any] | None = None,
+        error_stack: str | None = None,
+        coze_logid: str | None = None,
+        coze_debug_url: str | None = None,
+    ) -> None:
+        row = FakeAuditLog(
+            id=self._next_id,
+            trace_id=trace_id,
+            run_id=run_id,
+            session_id=session_id,
+            intent=intent,
+            search_query=self._mask_value(search_query),
+            topk_results=self._mask_value(topk_results),
+            route_id=route_id,
+            db_query_summary=self._mask_value(db_query_summary),
+            api_params=self._mask_value(api_params),
+            api_latency_ms=api_latency_ms,
+            final_answer_summary=self._mask_value((final_answer_summary or "")[:500]),
+            token_usage=self._mask_value(token_usage),
+            error_stack=self._mask_value(error_stack),
+            coze_logid=coze_logid,
+            coze_debug_url=self._mask_value(coze_debug_url),
+        )
+        self._rows.append(row)
+        self._next_id += 1
+
+    async def get_logs_by_trace_id(self, trace_id: str) -> list[FakeAuditLog]:
+        return [row for row in self._rows if row.trace_id == trace_id]
+
+    async def get_logs_by_session_id(self, session_id: str, page: int = 1, size: int = 20) -> dict[str, Any]:
+        rows = [row for row in self._rows if row.session_id == session_id]
+        offset = (max(1, page) - 1) * max(1, size)
+        return {"logs": rows[offset : offset + size], "total": len(rows)}
+
+    async def get_logs_by_time_range(
+        self,
+        start: datetime,
+        end: datetime,
+        page: int = 1,
+        size: int = 20,
+    ) -> dict[str, Any]:
+        rows = [row for row in self._rows if start <= row.created_at <= end]
+        offset = (max(1, page) - 1) * max(1, size)
+        return {"logs": rows[offset : offset + size], "total": len(rows)}
+
+
+@dataclass
 class MockServices:
     """Fixture bundle of mocked services used by tests."""
 
     session_service: FakeSessionService
     route_service: FakeRouteService
     lead_service: FakeLeadService
+    audit_service: FakeAuditService
     rate_limiter: FakeRateLimiter
     redis: FakeRedis
 
@@ -483,6 +586,24 @@ async def _mock_run_graph_streaming(
         await redis_client.rpush(f"events:{run_id}", json.dumps(event, ensure_ascii=False))
     await redis_client.set(f"done:{run_id}", "1", ex=300)
 
+    await services.audit_service.log_request(
+        trace_id=trace_id,
+        run_id=run_id,
+        session_id=session_id,
+        intent=str(patch.get("last_intent", "route_recommend")),
+        search_query=f"{msg} 联系方式13812345678",
+        topk_results=cards if cards else [{"document_id": "mock-doc", "score": 0.9}],
+        route_id=patch.get("active_route_id") or state.active_route_id or 1,
+        db_query_summary="mock db summary",
+        api_params={"query": msg, "phone": "13812345678"},
+        api_latency_ms=123,
+        final_answer_summary=f"{response} 联系电话 13812345678",
+        token_usage={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+        error_stack=None,
+        coze_logid="mock-logid",
+        coze_debug_url="https://coze.example/debug",
+    )
+
 
 @pytest.fixture
 def mock_services(monkeypatch: pytest.MonkeyPatch) -> MockServices:
@@ -491,6 +612,7 @@ def mock_services(monkeypatch: pytest.MonkeyPatch) -> MockServices:
     fake_session = FakeSessionService()
     fake_route = FakeRouteService()
     fake_lead = FakeLeadService(fake_session)
+    fake_audit = FakeAuditService()
     fake_rate = FakeRateLimiter()
     fake_redis = FakeRedis()
     fake_session_factory = FakeSessionFactory()
@@ -500,6 +622,7 @@ def mock_services(monkeypatch: pytest.MonkeyPatch) -> MockServices:
     services._route_service = fake_route
     services._lead_service = fake_lead
     services._rate_limiter = fake_rate
+    services._audit_service = fake_audit
     services._redis = fake_redis
     services._session_factory = fake_session_factory
 
@@ -513,6 +636,7 @@ def mock_services(monkeypatch: pytest.MonkeyPatch) -> MockServices:
         session_service=fake_session,
         route_service=fake_route,
         lead_service=fake_lead,
+        audit_service=fake_audit,
         rate_limiter=fake_rate,
         redis=fake_redis,
     )
