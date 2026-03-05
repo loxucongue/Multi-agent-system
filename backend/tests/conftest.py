@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for backend API e2e-style tests."""
+﻿"""Shared pytest fixtures for backend API e2e/admin tests."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -26,7 +26,7 @@ from app.services.container import services
 
 
 class FakeRedis:
-    """Very small in-memory async Redis subset for chat stream tests."""
+    """In-memory subset of async Redis used by chat stream tests."""
 
     def __init__(self) -> None:
         self._kv: dict[str, tuple[Any, float | None]] = {}
@@ -55,9 +55,7 @@ class FakeRedis:
     async def get(self, key: str) -> Any | None:
         self._purge_if_expired(key)
         pair = self._kv.get(key)
-        if pair is None:
-            return None
-        return pair[0]
+        return None if pair is None else pair[0]
 
     async def delete(self, *keys: str) -> int:
         deleted = 0
@@ -84,44 +82,43 @@ class FakeRedis:
 
     async def rpush(self, key: str, value: Any) -> int:
         async with self._cond:
-            items = self._lists.setdefault(key, [])
-            items.append(value)
+            rows = self._lists.setdefault(key, [])
+            rows.append(value)
             self._cond.notify_all()
-            return len(items)
+            return len(rows)
 
     async def lrange(self, key: str, start: int, end: int) -> list[Any]:
-        items = list(self._lists.get(key, []))
+        rows = list(self._lists.get(key, []))
         if end == -1:
-            return items[start:]
-        return items[start : end + 1]
+            return rows[start:]
+        return rows[start : end + 1]
 
     async def blpop(self, key: str, timeout: int = 0) -> tuple[str, Any] | None:
         end_at = self._now() + timeout if timeout else None
-
         async with self._cond:
             while True:
-                items = self._lists.get(key, [])
-                if items:
-                    value = items.pop(0)
-                    return key, value
+                rows = self._lists.get(key, [])
+                if rows:
+                    return key, rows.pop(0)
 
-                if end_at is not None:
-                    remain = end_at - self._now()
-                    if remain <= 0:
-                        return None
-                    try:
-                        await asyncio.wait_for(self._cond.wait(), timeout=remain)
-                    except asyncio.TimeoutError:
-                        return None
-                else:
+                if end_at is None:
                     await self._cond.wait()
+                    continue
+
+                remain = end_at - self._now()
+                if remain <= 0:
+                    return None
+                try:
+                    await asyncio.wait_for(self._cond.wait(), timeout=remain)
+                except asyncio.TimeoutError:
+                    return None
 
     async def aclose(self) -> None:
         return
 
 
 class FakeRateLimiter:
-    """Simplified rate limiter for tests."""
+    """Simple in-memory lock/rate limiter."""
 
     def __init__(self) -> None:
         self._locked: set[str] = set()
@@ -141,8 +138,71 @@ class FakeRateLimiter:
         return self.allow_rate_limit
 
 
+class _FakeScalarResult:
+    """Minimal wrapper for SQLAlchemy-style scalar result."""
+
+    def __init__(self, rows: list[Any] | None = None, scalar: Any | None = None) -> None:
+        self._rows = rows or []
+        self._scalar = scalar
+
+    def all(self) -> list[Any]:
+        return list(self._rows)
+
+
+class _FakeExecuteResult:
+    """Minimal wrapper for SQLAlchemy-style execute result."""
+
+    def __init__(self, rows: list[Any] | None = None, scalar: Any | None = None) -> None:
+        self._rows = rows or []
+        self._scalar = scalar
+
+    def scalars(self) -> _FakeScalarResult:
+        return _FakeScalarResult(rows=self._rows, scalar=self._scalar)
+
+    def scalar_one_or_none(self) -> Any | None:
+        return self._scalar
+
+    def scalar_one(self) -> Any:
+        return self._scalar
+
+
+class FakeDbSession:
+    """Minimal async DB session for admin endpoints."""
+
+    async def __aenter__(self) -> "FakeDbSession":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return
+
+    async def execute(self, stmt: Any) -> _FakeExecuteResult:
+        _ = stmt
+        return _FakeExecuteResult(rows=[], scalar=None)
+
+    async def commit(self) -> None:
+        return
+
+    async def rollback(self) -> None:
+        return
+
+    async def refresh(self, row: Any) -> None:
+        _ = row
+        return
+
+    def add(self, row: Any) -> None:
+        _ = row
+        return
+
+
+class FakeSessionFactory:
+    """Callable factory yielding FakeDbSession."""
+
+    def __call__(self) -> FakeDbSession:
+        return FakeDbSession()
+
+
 class FakeSessionService:
-    """In-memory session service contract used by APIs."""
+    """In-memory session service used by API tests."""
 
     def __init__(self) -> None:
         self._store: dict[str, SessionState] = {}
@@ -172,17 +232,17 @@ class FakeSessionService:
         return next_state.model_copy(deep=True)
 
     def _deep_merge(self, base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
-        result = dict(base)
+        out = dict(base)
         for key, value in patch.items():
-            if isinstance(result.get(key), dict) and isinstance(value, dict):
-                result[key] = self._deep_merge(result[key], value)
+            if isinstance(out.get(key), dict) and isinstance(value, dict):
+                out[key] = self._deep_merge(out[key], value)
             else:
-                result[key] = value
-        return result
+                out[key] = value
+        return out
 
 
 class FakeRouteService:
-    """In-memory route repository for /session and /compare endpoints."""
+    """In-memory route source for /session and /compare APIs."""
 
     def __init__(self) -> None:
         now = datetime.utcnow()
@@ -190,12 +250,12 @@ class FakeRouteService:
             1: RouteBatchItem(
                 id=1,
                 name="日本东京亲子7日",
-                supplier="测试供应商A",
+                supplier="Supplier A",
                 tags=["亲子", "轻松"],
                 summary="东京迪士尼与城市漫游，适合亲子家庭",
                 highlights="迪士尼,亲子酒店,城市观光",
                 base_info="7天6晚东京亲子线路",
-                itinerary_json=[{"day": 1}, {"day": 2}, {"day": 3}, {"day": 4}, {"day": 5}, {"day": 6}, {"day": 7}],
+                itinerary_json=[{"day": i} for i in range(1, 8)],
                 notice="请准备有效护照和签证资料",
                 included="机票、酒店、部分餐食与景点门票",
                 doc_url="https://example.com/1.pdf",
@@ -214,12 +274,12 @@ class FakeRouteService:
             2: RouteBatchItem(
                 id=2,
                 name="日本关西深度6日",
-                supplier="测试供应商B",
+                supplier="Supplier B",
                 tags=["美食", "深度游"],
                 summary="大阪京都奈良深度探索",
                 highlights="京都古寺,奈良公园,大阪美食",
                 base_info="6天5晚关西深度线路",
-                itinerary_json=[{"day": 1}, {"day": 2}, {"day": 3}, {"day": 4}, {"day": 5}, {"day": 6}],
+                itinerary_json=[{"day": i} for i in range(1, 7)],
                 notice="旺季需提前锁定团位",
                 included="酒店、交通、导游服务",
                 doc_url="https://example.com/2.pdf",
@@ -238,12 +298,12 @@ class FakeRouteService:
             3: RouteBatchItem(
                 id=3,
                 name="泰国曼谷普吉6日",
-                supplier="测试供应商C",
+                supplier="Supplier C",
                 tags=["海岛", "休闲"],
                 summary="曼谷城市体验+普吉海岛度假",
                 highlights="海岛度假,夜市,SPA",
                 base_info="6天5晚泰国度假线路",
-                itinerary_json=[{"day": 1}, {"day": 2}, {"day": 3}, {"day": 4}, {"day": 5}, {"day": 6}],
+                itinerary_json=[{"day": i} for i in range(1, 7)],
                 notice="雨季请准备防雨用品",
                 included="酒店、接送机、景点门票",
                 doc_url="https://example.com/3.pdf",
@@ -269,11 +329,10 @@ class FakeRouteService:
 
 
 class FakeLeadService:
-    """In-memory lead service that updates fake session state."""
+    """In-memory lead service that syncs state lead_status."""
 
     def __init__(self, session_service: FakeSessionService) -> None:
         self._session_service = session_service
-        self._submitted: set[str] = set()
 
     async def create_lead(
         self,
@@ -285,14 +344,14 @@ class FakeLeadService:
     ) -> LeadResponse:
         _ = active_route_id, user_profile, source
         if not re.fullmatch(r"^1[3-9]\d{9}$", phone.strip()):
-            raise ValueError("手机号格式不正确")
-        self._submitted.add(session_id)
+            raise ValueError("invalid phone")
+
         masked = f"{phone[:3]}****{phone[-4:]}"
         await self._session_service.update_session_state(
             session_id,
             {"lead_status": "captured", "lead_phone": masked},
         )
-        return LeadResponse(success=True, message="提交成功，顾问将尽快联系您", phone_masked=masked)
+        return LeadResponse(success=True, message="ok", phone_masked=masked)
 
 
 @dataclass
@@ -313,32 +372,42 @@ async def _mock_run_graph_streaming(
     trace_id: str,
     redis_client: FakeRedis,
 ) -> None:
-    """Deterministic graph mock to drive API e2e tests."""
+    """Deterministic graph mock to drive API tests."""
 
     state = await services.session_service.get_session_state(session_id)
     if state is None:
-        await redis_client.rpush(f"events:{run_id}", json.dumps({"event": "error", "data": {"message": "session not found"}}))
+        await redis_client.rpush(
+            f"events:{run_id}",
+            json.dumps({"event": "error", "data": {"message": "session not found"}}, ensure_ascii=False),
+        )
         return
 
-    message = user_message.strip()
+    msg = user_message.strip()
     patch: dict[str, Any] = {}
     response = "好的，我来帮您看看。"
     cards: list[dict[str, Any]] = []
     ui_actions: list[dict[str, Any]] = []
 
-    if "签证" in message:
+    if "签证" in msg:
         patch["last_intent"] = "visa"
         response = "日本签证通常需要护照、照片和在职证明，以上信息仅供参考。"
-    elif any(k in message for k in ("价格", "团期", "多少钱")):
+    elif any(k in msg for k in ("价格", "团期", "多少钱")):
         patch["last_intent"] = "price_schedule"
         active = state.active_route_id or (state.candidate_route_ids[0] if state.candidate_route_ids else 1)
         patch["active_route_id"] = active
         response = "这条线路价格约 12999-16999 元，价格更新于2026-03-05。"
-        ui_actions.append({"action": "collect_phone", "payload": {"reason": "您对该路线表现出较强兴趣，留下手机号顾问会为您确认最新信息"}})
-    elif any(k in message for k in ("天气", "航班", "交通")):
+        ui_actions.append(
+            {
+                "action": "collect_phone",
+                "payload": {
+                    "reason": "您对该路线表现出较强兴趣，留下手机号顾问会为您确认最新信息",
+                },
+            }
+        )
+    elif any(k in msg for k in ("天气", "航班", "交通")):
         patch["last_intent"] = "external_info"
         response = "东京明日多云转晴，数据来自示例气象源，获取于2026-03-05。"
-    elif any(k in message for k in ("换", "重新推荐", "再来几条")):
+    elif any(k in msg for k in ("换", "重新推荐", "再来几条")):
         old_ids = [rid for rid in [state.active_route_id, *state.candidate_route_ids] if rid is not None]
         excluded = list(dict.fromkeys([*state.excluded_route_ids, *old_ids]))
         patch.update(
@@ -352,11 +421,11 @@ async def _mock_run_graph_streaming(
             }
         )
         response = "已为您更换一批推荐，给您一条泰国方向方案。"
-    elif any(k in message for k in ("详细", "行程", "第")):
+    elif any(k in msg for k in ("详细", "行程", "第")):
         patch["last_intent"] = "route_followup"
         patch["followup_count"] = int(state.followup_count) + 1
         response = "第一天抵达东京，第二天迪士尼，后续安排城市与亲子体验。"
-    elif any(k in message for k in ("你好", "心情", "天气真好")):
+    elif any(k in msg for k in ("你好", "心情", "天气真好")):
         patch["last_intent"] = "chitchat"
         response = "很高兴和您聊天，您想去哪里旅游呢？"
     else:
@@ -369,20 +438,32 @@ async def _mock_run_graph_streaming(
             }
         )
         cards = [
-            {"id": 1, "name": "日本东京亲子7日", "summary": "东京迪士尼与城市漫游", "tags": ["亲子"], "doc_url": "https://example.com/1.pdf", "highlights": ["迪士尼"]},
-            {"id": 2, "name": "日本关西深度6日", "summary": "大阪京都奈良深度探索", "tags": ["深度游"], "doc_url": "https://example.com/2.pdf", "highlights": ["京都古寺"]},
+            {
+                "id": 1,
+                "name": "日本东京亲子7日",
+                "summary": "东京迪士尼与城市漫游",
+                "tags": ["亲子"],
+                "doc_url": "https://example.com/1.pdf",
+                "highlights": ["迪士尼"],
+            },
+            {
+                "id": 2,
+                "name": "日本关西深度6日",
+                "summary": "大阪京都奈良深度探索",
+                "tags": ["深度游"],
+                "doc_url": "https://example.com/2.pdf",
+                "highlights": ["京都古寺"],
+            },
         ]
         response = "为您推荐两条日本线路，分别偏亲子和深度游。"
 
     updated = await services.session_service.update_session_state(session_id, patch)
-    payloads = [
-        {"event": "token", "data": {"text": response, "node": "response"}},
-    ]
+
+    payloads: list[dict[str, Any]] = [{"event": "token", "data": {"text": response, "node": "response"}}]
     if cards:
         payloads.append({"event": "cards", "data": cards})
-    if ui_actions:
-        for action in ui_actions:
-            payloads.append({"event": "ui_action", "data": action})
+    for action in ui_actions:
+        payloads.append({"event": "ui_action", "data": action})
     payloads.append(
         {
             "event": "state_patch",
@@ -405,13 +486,14 @@ async def _mock_run_graph_streaming(
 
 @pytest.fixture
 def mock_services(monkeypatch: pytest.MonkeyPatch) -> MockServices:
-    """Install mocked service container dependencies for API tests."""
+    """Install mocked global services for API tests."""
 
     fake_session = FakeSessionService()
     fake_route = FakeRouteService()
     fake_lead = FakeLeadService(fake_session)
     fake_rate = FakeRateLimiter()
     fake_redis = FakeRedis()
+    fake_session_factory = FakeSessionFactory()
 
     services._initialized = True
     services._session_service = fake_session
@@ -419,6 +501,7 @@ def mock_services(monkeypatch: pytest.MonkeyPatch) -> MockServices:
     services._lead_service = fake_lead
     services._rate_limiter = fake_rate
     services._redis = fake_redis
+    services._session_factory = fake_session_factory
 
     async def _noop() -> None:
         return
@@ -437,14 +520,14 @@ def mock_services(monkeypatch: pytest.MonkeyPatch) -> MockServices:
 
 @pytest.fixture
 def anyio_backend() -> str:
-    """Force anyio tests to run with asyncio only (no trio dependency)."""
+    """Run anyio tests on asyncio backend only."""
 
     return "asyncio"
 
 
 @pytest.fixture
 async def async_client(mock_services: MockServices) -> AsyncClient:
-    """Create async test client bound to FastAPI app with mocked services."""
+    """Create async test client bound to FastAPI app."""
 
     from app.main import app
 
