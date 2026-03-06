@@ -335,6 +335,9 @@ async def _resolve_candidate_route_ids(
         len(url_route_ids),
         len(url_to_id),
     )
+    if url_to_id:
+        preview = list(url_to_id.items())[:5]
+        _LOGGER.info("route_id mapping preview trace_id=%s preview=%s", trace_id, preview)
 
     resolved: list[dict[str, Any]] = []
     for candidate in candidates:
@@ -357,6 +360,15 @@ async def _resolve_candidate_route_ids(
                     )
                     item["route_id"] = None
         resolved.append(item)
+
+    missing_count = sum(1 for item in resolved if item.get("route_id") is None)
+    if missing_count:
+        _LOGGER.warning(
+            "route_id mapping unresolved trace_id=%s missing=%s total=%s",
+            trace_id,
+            missing_count,
+            len(resolved),
+        )
 
     return resolved
 

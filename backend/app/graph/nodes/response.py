@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.graph.state import GraphState, STAGE_COMPARING, STAGE_RECOMMENDED
+from app.graph.state import GraphState, STAGE_COLLECTING, STAGE_COMPARING, STAGE_RECOMMENDED
 from app.prompts.response_generation import build_response_prompt
 from app.services.container import services
 from app.services.llm_client import LLMClient
@@ -30,9 +30,19 @@ async def response_generation_node(state: GraphState) -> dict[str, Any]:
         else await _generate_text(intent, tool_results, user_message, state)
     )
 
+    destination_mismatch = (
+        intent == "route_recommend"
+        and _is_route_recommend_destination_mismatch(tool_results=tool_results, state=state)
+    )
+
     ui_actions = _build_ui_actions(intent, tool_results, state)
-    cards = _build_cards(intent, tool_results)
+    cards = [] if destination_mismatch else _build_cards(intent, tool_results)
     state_patches = _build_state_patches(intent, tool_results, state)
+    if destination_mismatch:
+        ui_actions = []
+        state_patches["active_route_id"] = None
+        state_patches["candidate_route_ids"] = []
+        state_patches["stage"] = STAGE_COLLECTING
 
     return {
         "response_text": response_text,
@@ -75,6 +85,19 @@ async def _generate_text(
         candidates = tool_results.get("candidates")
         candidates_without_id = tool_results.get("candidates_without_id")
         candidates_filtered_out = tool_results.get("candidates_filtered_out")
+
+        if _is_route_recommend_destination_mismatch(tool_results=tool_results, state=state):
+            destinations = _extract_profile_destinations(state)
+            destination_text = "、".join(destinations) if destinations else "您当前提到的目的地"
+            _LOGGER.warning(
+                "route_recommend destination mismatch, destination=%s tool_keys=%s",
+                destinations,
+                list(tool_results.keys()),
+            )
+            return (
+                f"抱歉，当前匹配到的线路与「{destination_text}」不完全一致，"
+                "我正在重新为您筛选。您也可以补充出发时间或预算，让匹配更精准。"
+            )
 
         has_results = (
             isinstance(route_details, list) and bool(route_details)
@@ -269,6 +292,57 @@ def _to_route_card(detail: dict[str, Any]) -> dict[str, Any]:
         "doc_url": detail.get("doc_url"),
         "highlights": str(detail.get("highlights") or ""),
     }
+
+
+def _extract_profile_destinations(state: GraphState) -> list[str]:
+    profile = state.get("user_profile")
+    destinations: list[str] = []
+
+    if hasattr(profile, "destinations") and isinstance(profile.destinations, list):
+        destinations = [str(item).strip() for item in profile.destinations if str(item).strip()]
+    elif isinstance(profile, dict):
+        raw_destinations = profile.get("destinations")
+        if isinstance(raw_destinations, list):
+            destinations = [str(item).strip() for item in raw_destinations if str(item).strip()]
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for destination in destinations:
+        if destination in seen:
+            continue
+        seen.add(destination)
+        deduped.append(destination)
+    return deduped
+
+
+def _is_route_recommend_destination_mismatch(tool_results: dict[str, Any], state: GraphState) -> bool:
+    route_details = tool_results.get("route_details")
+    if not isinstance(route_details, list) or not route_details:
+        return False
+
+    destinations = _extract_profile_destinations(state)
+    if not destinations:
+        return False
+
+    for detail in route_details:
+        if not isinstance(detail, dict):
+            continue
+        if _route_detail_matches_destinations(detail, destinations):
+            return False
+    return True
+
+
+def _route_detail_matches_destinations(detail: dict[str, Any], destinations: list[str]) -> bool:
+    text_parts = [
+        str(detail.get("name") or ""),
+        str(detail.get("summary") or ""),
+        str(detail.get("base_info") or ""),
+        " ".join(str(tag) for tag in detail.get("tags", []) if str(tag).strip())
+        if isinstance(detail.get("tags"), list)
+        else "",
+    ]
+    combined = " ".join(text_parts)
+    return any(destination in combined for destination in destinations)
 
 
 def _fallback_text_from_tool_results(intent: str, tool_results: dict[str, Any]) -> str:
