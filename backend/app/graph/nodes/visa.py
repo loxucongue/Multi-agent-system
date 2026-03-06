@@ -8,6 +8,7 @@ from typing import Any
 from app.graph.state import GraphState
 from app.models.schemas import UserProfile
 from app.prompts.visa_query_rewrite import build_visa_query_rewrite_prompt
+from app.prompts.visa_result_eval import build_visa_result_eval_prompt
 from app.services.container import services
 from app.services.llm_client import LLMClient
 from app.utils.logger import get_logger
@@ -43,6 +44,19 @@ _DOMESTIC_CITIES = {
     "敦煌",
     "香格里拉",
 }
+_MAX_ATTEMPTS = 3
+_VISA_EVAL_SCHEMA: dict[str, Any] = {
+    "name": "visa_result_eval",
+    "schema": {
+        "type": "object",
+        "properties": {
+            "relevant": {"type": "boolean"},
+            "reasoning": {"type": "string"},
+        },
+        "required": ["relevant", "reasoning"],
+        "additionalProperties": True,
+    },
+}
 
 _NATIONALITY_KEYWORDS = {
     "中国大陆": ("中国大陆", "大陆护照", "内地护照"),
@@ -57,12 +71,13 @@ _NATIONALITY_KEYWORDS = {
 
 
 async def visa_kb_search_node(state: GraphState) -> dict[str, Any]:
-    """Run visa KB search and return normalized answer/sources payload."""
+    """Run visa KB search with an agentic retry loop."""
 
     user_message = str(state.get("current_user_message") or "").strip()
     trace_id = str(state.get("trace_id") or "-")
     session_id = str(state.get("session_id") or "")
     profile = _ensure_profile(state.get("user_profile"))
+    history = _normalize_history(state.get("context_turns"))
 
     country = _extract_destination_country(user_message, profile)
     nationality = _extract_nationality(user_message)
@@ -79,29 +94,85 @@ async def visa_kb_search_node(state: GraphState) -> dict[str, Any]:
             },
         }
 
-    query = await _rewrite_visa_query(user_message, state) or _build_visa_query(
-        country=country,
-        nationality=nationality,
-        stay_days=stay_days,
-        depart_date=depart_date,
-    )
-
     workflow_service = _resolve_workflow_service()
+    llm_client, should_close = _resolve_llm_client()
+    previous_query: str | None = None
+    previous_result_summary: str | None = None
+
     try:
-        result = await workflow_service.run_visa_search(query=query, trace_id=trace_id, session_id=session_id)
-        answer = str(getattr(result, "answer", "") or "")
-        sources = getattr(result, "sources", [])
-        if not isinstance(sources, list):
-            sources = []
-        return {"tool_results": {"answer": answer, "sources": sources}}
-    except Exception as exc:
-        _LOGGER.warning(f"visa kb search failed trace_id={trace_id} country={country}: {exc}")
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            query = await _generate_visa_query(
+                llm_client=llm_client,
+                user_message=user_message,
+                history=history,
+                country=country,
+                nationality=nationality,
+                stay_days=stay_days,
+                depart_date=depart_date,
+                attempt=attempt,
+                previous_query=previous_query,
+                previous_result_summary=previous_result_summary,
+            )
+            if not query:
+                query = _build_visa_query(
+                    country=country,
+                    nationality=nationality,
+                    stay_days=stay_days,
+                    depart_date=depart_date,
+                )
+
+            _LOGGER.info("visa_kb_search trace_id=%s attempt=%s query=%r", trace_id, attempt, query)
+            try:
+                result = await workflow_service.run_visa_search(query=query, trace_id=trace_id, session_id=session_id)
+            except Exception as exc:
+                _LOGGER.warning("visa kb search failed trace_id=%s attempt=%s country=%s: %s", trace_id, attempt, country, exc)
+                previous_query = query
+                previous_result_summary = None
+                continue
+
+            answer = str(getattr(result, "answer", "") or "")
+            sources = getattr(result, "sources", [])
+            if not isinstance(sources, list):
+                sources = []
+
+            if not answer.strip():
+                _LOGGER.info("visa_kb_search trace_id=%s attempt=%s empty answer", trace_id, attempt)
+                previous_query = query
+                previous_result_summary = None
+                continue
+
+            previous_result_summary = answer[:300]
+            relevant, reasoning = await _evaluate_visa_result(
+                llm_client=llm_client,
+                user_message=user_message,
+                country=country,
+                query=query,
+                answer=answer,
+                sources=sources,
+            )
+            _LOGGER.info(
+                "visa_kb_search trace_id=%s attempt=%s relevant=%s reasoning=%s",
+                trace_id,
+                attempt,
+                relevant,
+                reasoning,
+            )
+            if relevant:
+                return {"tool_results": {"answer": answer, "sources": sources}}
+
+            previous_query = query
+
+        fallback_text = "未找到相关签证信息，请确认国家名称后重试。"
         return {
+            "response_text": fallback_text,
             "tool_results": {
-                "answer": "签证信息查询暂时不可用，请稍后重试。",
+                "answer": fallback_text,
                 "sources": [],
-            }
+            },
         }
+    finally:
+        if should_close:
+            await llm_client.aclose()
 
 
 def _resolve_workflow_service() -> Any:
@@ -198,21 +269,63 @@ def _extract_nationality(user_message: str) -> str:
     return _DEFAULT_NATIONALITY
 
 
-async def _rewrite_visa_query(user_message: str, state: GraphState) -> str | None:
-    history = _normalize_history(state.get("context_turns"))
-    llm_client, should_close = _resolve_llm_client()
+async def _generate_visa_query(
+    llm_client: LLMClient,
+    user_message: str,
+    history: list[dict[str, str]],
+    country: str,
+    nationality: str,
+    stay_days: str | None,
+    depart_date: str | None,
+    attempt: int,
+    previous_query: str | None,
+    previous_result_summary: str | None,
+) -> str | None:
     try:
-        messages = build_visa_query_rewrite_prompt(user_message=user_message, history=history)
+        messages = build_visa_query_rewrite_prompt(
+            user_message=user_message,
+            history=history,
+            attempt=attempt,
+            previous_query=previous_query,
+            previous_result_summary=previous_result_summary,
+        )
         content = await llm_client.chat(messages=messages, temperature=0.1, max_tokens=64)
         query = _normalize_rewritten_query(content)
         if query:
             return query
     except Exception as exc:
-        _LOGGER.warning(f"visa query rewrite failed: {exc}")
-    finally:
-        if should_close:
-            await llm_client.aclose()
-    return None
+        _LOGGER.warning("visa query rewrite failed attempt=%s: %s", attempt, exc)
+    return _build_visa_query(
+        country=country,
+        nationality=nationality,
+        stay_days=stay_days,
+        depart_date=depart_date,
+    )
+
+
+async def _evaluate_visa_result(
+    llm_client: LLMClient,
+    user_message: str,
+    country: str,
+    query: str,
+    answer: str,
+    sources: list[str],
+) -> tuple[bool, str]:
+    try:
+        messages = build_visa_result_eval_prompt(
+            user_message=user_message,
+            country=country,
+            query=query,
+            answer=answer,
+            sources=sources,
+        )
+        result = await llm_client.chat_json(messages=messages, json_schema=_VISA_EVAL_SCHEMA, temperature=0.1)
+        relevant = bool(result.get("relevant", False))
+        reasoning = str(result.get("reasoning") or "").strip() or "llm_eval"
+        return relevant, reasoning
+    except Exception as exc:
+        fallback_relevant = bool(answer.strip()) and (country in answer or not country)
+        return fallback_relevant, f"fallback_eval:{exc}"
 
 
 def _normalize_history(value: Any) -> list[dict[str, str]]:

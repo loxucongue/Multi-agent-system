@@ -63,7 +63,7 @@ async def collect_requirements_node(state: GraphState) -> dict[str, Any]:
     profile = _ensure_profile(state.get("user_profile"))
     user_message = str(state.get("current_user_message") or "").strip()
     last_intent = str(state.get("last_intent") or "")
-    slots_ready = len(profile.destinations) > 0
+    slots_ready = _has_ready_recommendation_inputs(profile)
     in_rematch_collecting = state.get("stage") == STAGE_REMATCH_COLLECTING
 
     if in_rematch_collecting:
@@ -112,7 +112,7 @@ async def collect_requirements_node(state: GraphState) -> dict[str, Any]:
 
     return {
         "user_profile": updated_profile,
-        "slots_ready": len(updated_profile.destinations) > 0,
+        "slots_ready": _has_ready_recommendation_inputs(updated_profile),
         "response_text": response_text,
         "stage": STAGE_COLLECTING,
     }
@@ -145,6 +145,21 @@ def _get_missing_slots(profile: UserProfile) -> list[str]:
         missing.append("origin_city")
 
     return missing
+
+
+def _has_ready_recommendation_inputs(profile: UserProfile) -> bool:
+    if len(profile.destinations) == 0:
+        return False
+
+    other_dimensions = (
+        bool(str(profile.days_range or "").strip()),
+        bool(str(profile.budget_range or "").strip()),
+        bool(str(profile.depart_date_range or "").strip()),
+        bool(str(profile.people or "").strip()),
+        len(profile.style_prefs) > 0,
+        bool(str(profile.origin_city or "").strip()),
+    )
+    return any(other_dimensions)
 
 
 async def _generate_collect_questions(
