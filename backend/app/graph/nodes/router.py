@@ -138,9 +138,14 @@ async def router_intent_node(state: GraphState) -> dict[str, Any]:
 
     updated_profile = _merge_user_profile_non_empty(current_profile, profile_patch)
 
-    # rematch keyword + real condition change => keep/force rematch
-    if _contains_any(user_message, _REMATCH_KEYWORDS) and bool(profile_patch):
-        intent = "rematch"
+    # "换一个" 只有在条件不足时才视作 rematch；
+    # 如果已经给出 2 个及以上有效维度，则按新的推荐请求处理。
+    if _contains_any(user_message, _REMATCH_KEYWORDS):
+        patch_dimension_count = _count_profile_patch_dimensions(profile_patch)
+        if patch_dimension_count >= 2:
+            intent = "route_recommend"
+        else:
+            intent = "rematch"
 
     target_route_index = _extract_target_route_index(entity_bucket, user_message)
     target_route_id = _resolve_target_route_id(target_route_index, candidate_route_ids)
@@ -260,6 +265,28 @@ def _build_user_profile_patch(entities: dict[str, Any]) -> dict[str, Any]:
     )
     _set_if_non_empty_string(patch, "people", entities.get("people"))
     return patch
+
+
+def _count_profile_patch_dimensions(profile_patch: dict[str, Any]) -> int:
+    meaningful_keys = {
+        "destinations",
+        "days_range",
+        "budget_range",
+        "depart_date_range",
+        "people",
+        "style_prefs",
+        "origin_city",
+    }
+    count = 0
+    for key in meaningful_keys:
+        value = profile_patch.get(key)
+        if isinstance(value, list):
+            if value:
+                count += 1
+            continue
+        if value:
+            count += 1
+    return count
 
 
 def _set_if_non_empty_string(target: dict[str, Any], key: str, value: Any) -> None:

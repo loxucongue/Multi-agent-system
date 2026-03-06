@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.services.prompt_defaults import DEFAULT_PROMPTS
 from app.services.prompt_service import get_active_prompt
 
 
@@ -15,15 +16,7 @@ async def build_collect_prompt(
 ) -> list[dict[str, str]]:
     """Build messages that guide the model to ask focused follow-up questions."""
 
-    default_system_prompt = (
-        "你是旅游需求收集助手。"
-        "必要槽位是 destination（在数据结构中对应 destinations 列表至少 1 项）。"
-        "可选槽位有 days_range、budget_range、depart_date_range、people、style_prefs、origin_city。"
-        "你需要输出 1~3 个追问问题，优先补齐必要槽位，避免重复询问已知信息。"
-        "只允许输出 JSON："
-        "{\"questions\":[\"...\"],\"suggested_state_patch\":{\"user_profile\":{}},\"slots_ready\":bool,\"reasoning\":\"...\"}。"
-        "若槽位已足够，可 questions 返回空数组且 slots_ready=true。"
-    )
+    default_system_prompt = DEFAULT_PROMPTS["requirement_collection"]
     system_prompt = (await get_active_prompt("requirement_collection")) or default_system_prompt
 
     user_prompt = (
@@ -37,4 +30,3 @@ async def build_collect_prompt(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
-

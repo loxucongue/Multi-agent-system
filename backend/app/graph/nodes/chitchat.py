@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from app.graph.state import GraphState
 from app.services.container import services
 from app.services.llm_client import LLMClient
+from app.services.prompt_defaults import DEFAULT_PROMPTS
+from app.services.prompt_service import get_active_prompt
 from app.utils.logger import get_logger
 
 _LOGGER = get_logger(__name__)
@@ -19,11 +19,8 @@ async def chitchat_node(state: GraphState) -> dict[str, str]:
     user_message = str(state.get("current_user_message") or "").strip()
     llm_client, should_close = _resolve_llm_client()
 
-    system_prompt = (
-        "你是友好、克制、礼貌的旅游顾问助手。"
-        "先回应用户情绪或话题，再自然转回旅游咨询。"
-        "语气温和，不说教，不夸张。"
-        f"回答末尾必须自然包含这句话：{_GUIDE_SUFFIX}"
+    system_prompt = (await get_active_prompt("chitchat")) or (
+        f"{DEFAULT_PROMPTS['chitchat']} 回答末尾必须自然包含这句话：{_GUIDE_SUFFIX}"
     )
 
     response_text = ""
@@ -38,7 +35,7 @@ async def chitchat_node(state: GraphState) -> dict[str, str]:
         )
     except Exception as exc:
         _LOGGER.warning(f"chitchat llm call failed, fallback used: {exc}")
-        response_text = "抱抱你，今天先照顾好自己最重要。" + _GUIDE_SUFFIX
+        response_text = f"抱歉，今天先照顾好自己最重要。{_GUIDE_SUFFIX}"
     finally:
         if should_close:
             await llm_client.aclose()
@@ -57,10 +54,11 @@ def _resolve_llm_client() -> tuple[LLMClient, bool]:
 def _normalize_response(text: str) -> str:
     normalized = str(text or "").strip()
     if not normalized:
-        return "我在这儿陪着您。" + _GUIDE_SUFFIX
+        return f"我在这儿陪着您。{_GUIDE_SUFFIX}"
 
     if _GUIDE_SUFFIX not in normalized:
         if not normalized.endswith(("。", "！", "？", ".", "!", "?")):
             normalized += "。"
         normalized += _GUIDE_SUFFIX
     return normalized
+

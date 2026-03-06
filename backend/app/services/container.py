@@ -15,6 +15,7 @@ from app.services.coze_client import CozeClient
 from app.services.kb_admin_service import KBAdminService
 from app.services.lead_service import LeadService
 from app.services.llm_client import LLMClient
+from app.services.prompt_service import ensure_prompt_seeds
 from app.services.rate_limiter import RateLimiter
 from app.services.route_service import RouteService
 from app.services.session_service import SessionService
@@ -95,6 +96,7 @@ class ServiceContainer:
             )
             self._rate_limiter = RateLimiter(redis=self._redis)
             self._audit_service = AuditService(session_factory=self._session_factory)
+            await ensure_prompt_seeds()
 
             self._initialized = True
             self._logger.info("service container initialized")

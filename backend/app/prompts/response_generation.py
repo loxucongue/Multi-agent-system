@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.services.prompt_defaults import DEFAULT_PROMPTS
 from app.services.prompt_service import get_active_prompt
 
 _SCENE_INSTRUCTIONS: dict[str, str] = {
@@ -40,10 +41,7 @@ async def build_response_prompt(
         )
 
     default_system_prompt = (
-        "你是旅游顾问回复生成器。根据 intent、tool_results、用户消息、state 生成中文回复。"
-        "严禁编造 tool_results 未提供的数据；若信息不足，明确说明缺失项。"
-        "价格/团期必须带更新时间；签证回答必须包含风险提示。"
-        f"场景指令：{scene_instruction} {secondary_hint}"
+        f"{DEFAULT_PROMPTS['response_generation']} 场景指令：{scene_instruction} {secondary_hint}"
     )
     system_prompt = (await get_active_prompt("response_generation")) or default_system_prompt
 
@@ -73,4 +71,3 @@ def _state_for_response(state: dict[str, Any]) -> dict[str, Any]:
         "user_profile",
     }
     return {k: v for k, v in state.items() if k in keep_keys}
-
