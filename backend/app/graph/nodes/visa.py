@@ -7,7 +7,9 @@ from typing import Any
 
 from app.graph.state import GraphState
 from app.models.schemas import UserProfile
+from app.prompts.visa_query_rewrite import build_visa_query_rewrite_prompt
 from app.services.container import services
+from app.services.llm_client import LLMClient
 from app.utils.logger import get_logger
 
 _LOGGER = get_logger(__name__)
@@ -47,7 +49,7 @@ async def visa_kb_search_node(state: GraphState) -> dict[str, Any]:
             }
         }
 
-    query = _build_visa_query(
+    query = await _rewrite_visa_query(user_message, state) or _build_visa_query(
         country=country,
         nationality=nationality,
         stay_days=stay_days,
@@ -77,6 +79,13 @@ def _resolve_workflow_service() -> Any:
         return services.workflow_service
     except Exception as exc:
         raise RuntimeError("service container is not initialized for visa kb search node") from exc
+
+
+def _resolve_llm_client() -> tuple[LLMClient, bool]:
+    try:
+        return services.llm_client, False
+    except Exception:
+        return LLMClient(), True
 
 
 def _ensure_profile(value: Any) -> UserProfile:
@@ -151,6 +160,52 @@ def _extract_nationality(user_message: str) -> str:
                 return value
 
     return _DEFAULT_NATIONALITY
+
+
+async def _rewrite_visa_query(user_message: str, state: GraphState) -> str | None:
+    history = _normalize_history(state.get("context_turns"))
+    llm_client, should_close = _resolve_llm_client()
+    try:
+        messages = build_visa_query_rewrite_prompt(user_message=user_message, history=history)
+        content = await llm_client.chat(messages=messages, temperature=0.1, max_tokens=64)
+        query = _normalize_rewritten_query(content)
+        if query:
+            return query
+    except Exception as exc:
+        _LOGGER.warning(f"visa query rewrite failed: {exc}")
+    finally:
+        if should_close:
+            await llm_client.aclose()
+    return None
+
+
+def _normalize_history(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+
+    normalized: list[dict[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        user = str(item.get("user") or "").strip()
+        assistant = str(item.get("assistant") or "").strip()
+        if not user and not assistant:
+            continue
+        normalized.append({"user": user, "assistant": assistant})
+    return normalized
+
+
+def _normalize_rewritten_query(value: str) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    text = re.sub(r"^```(?:text)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```$", "", text)
+    text = text.replace("\r", "\n").strip()
+    if "\n" in text:
+        text = text.splitlines()[0].strip()
+    text = text.strip("“”\"' ")
+    return text or None
 
 
 def _build_visa_query(
