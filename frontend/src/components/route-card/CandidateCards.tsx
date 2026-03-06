@@ -85,7 +85,7 @@ export default function CandidateCards({ cards, onSelect, onCompare, onGuideRema
 
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, paddingBottom: 72 }}>
         {cards.map((card) => {
           const checked = selectedRouteIds.includes(card.id);
           return (
@@ -125,9 +125,13 @@ export default function CandidateCards({ cards, onSelect, onCompare, onGuideRema
 
       <div
         style={{
-          marginTop: 12,
-          borderTop: "1px solid #f0f0f0",
-          paddingTop: 12,
+          position: "sticky",
+          bottom: 0,
+          zIndex: 10,
+          background: "#f5f7fb",
+          borderTop: "1px solid #dbe3f3",
+          paddingTop: 10,
+          paddingBottom: 8,
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",

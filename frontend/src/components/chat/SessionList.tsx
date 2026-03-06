@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 
-import { ClockCircleOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Empty, List, Skeleton, Space, Spin, Typography } from "antd";
+import { ClockCircleOutlined, MessageOutlined, PlusOutlined } from "@ant-design/icons";
+import { Button, Empty, List, Skeleton, Space, Typography } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
@@ -9,14 +9,15 @@ import { SESSION_HISTORY_KEY, type SessionHistoryItem, useChatStore } from "@/st
 
 const { Text } = Typography;
 
-const formatTime = (ts: number): string => {
-  return new Date(ts).toLocaleString("zh-CN", {
+const formatTime = (ts: number): string =>
+  new Date(ts).toLocaleString("zh-CN", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
   });
-};
+
+const isRecent = (ts: number): boolean => Date.now() - ts <= 7 * 24 * 60 * 60 * 1000;
 
 const readHistory = (): SessionHistoryItem[] => {
   if (typeof window === "undefined") {
@@ -99,95 +100,16 @@ export default function SessionList() {
     }
   };
 
-  const isEmpty = !loading && sessions.length === 0;
-  const isNormal = !loading && sessions.length > 0;
-
-  const content = useMemo(() => {
-    if (loading) {
-      return (
-        <div style={{ padding: 12 }}>
-          <Skeleton active paragraph={{ rows: 5 }} />
-          <div style={{ marginTop: 8 }}>
-            <Spin size="small" /> <Text type="secondary">加载会话中...</Text>
-          </div>
-        </div>
-      );
-    }
-
-    if (isEmpty) {
-      return (
-        <div style={{ padding: "20px 12px" }}>
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={<Text type="secondary">发送消息开始咨询</Text>}
-          />
-        </div>
-      );
-    }
-
-    if (!isNormal) {
-      return null;
-    }
-
-    return (
-      <List
-        dataSource={sessions}
-        style={{ padding: "0 8px 8px" }}
-        renderItem={(item) => {
-          const active = item.session_id === sessionId;
-          const switching = switchingId === item.session_id;
-          return (
-            <List.Item style={{ padding: 0, border: 0, marginBottom: 8 }}>
-              <Button
-                block
-                type={active ? "primary" : "default"}
-                ghost={!active}
-                loading={switching}
-                onClick={() => {
-                  void handleSwitch(item.session_id);
-                }}
-                style={{
-                  height: "auto",
-                  textAlign: "left",
-                  padding: 10,
-                  borderRadius: 10,
-                }}
-              >
-                <div style={{ width: "100%" }}>
-                  <div
-                    style={{
-                      fontWeight: 600,
-                      marginBottom: 6,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    {item.title}
-                  </div>
-                  <Space size={6} direction="vertical">
-                    <Text type={active ? undefined : "secondary"} style={{ fontSize: 12 }}>
-                      创建：{formatTime(item.created_at)}
-                    </Text>
-                    <Text type={active ? undefined : "secondary"} style={{ fontSize: 12 }}>
-                      <ClockCircleOutlined style={{ marginRight: 4 }} />
-                      最近：{formatTime(item.last_active_at)}
-                    </Text>
-                  </Space>
-                </div>
-              </Button>
-            </List.Item>
-          );
-        }}
-      />
-    );
-  }, [handleSwitch, isEmpty, isNormal, loading, sessionId, sessions, switchingId]);
+  const grouped = useMemo(() => {
+    const recent = sessions.filter((item) => isRecent(item.last_active_at));
+    const earlier = sessions.filter((item) => !isRecent(item.last_active_at));
+    return { recent, earlier };
+  }, [sessions]);
 
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <div style={{ padding: 12, borderBottom: "1px solid rgba(255,255,255,0.15)" }}>
+      <div style={{ padding: 16, borderBottom: "1px solid #e5e8ef" }}>
         <Button
-          type="primary"
           icon={<PlusOutlined />}
           block
           loading={creating}
@@ -195,11 +117,100 @@ export default function SessionList() {
           onClick={() => {
             void handleCreate();
           }}
+          style={{
+            height: 44,
+            borderRadius: 12,
+            background: "#e9eef7",
+            borderColor: "#d4deef",
+            color: "#2f5db5",
+            fontWeight: 600,
+          }}
         >
-          新建会话
+          开启新咨询
         </Button>
       </div>
-      <div style={{ flex: 1, overflowY: "auto" }}>{content}</div>
+
+      <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+        {loading ? (
+          <Skeleton active paragraph={{ rows: 6 }} />
+        ) : sessions.length === 0 ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有历史会话" />
+        ) : (
+          <>
+            <Section title="最近对话" items={grouped.recent} sessionId={sessionId} switchingId={switchingId} onSwitch={handleSwitch} />
+            {grouped.earlier.length > 0 ? (
+              <Section title="更早" items={grouped.earlier} sessionId={sessionId} switchingId={switchingId} onSwitch={handleSwitch} />
+            ) : null}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Section({
+  title,
+  items,
+  sessionId,
+  switchingId,
+  onSwitch,
+}: {
+  title: string;
+  items: SessionHistoryItem[];
+  sessionId: string | null;
+  switchingId: string | null;
+  onSwitch: (sessionId: string) => Promise<void>;
+}) {
+  if (!items.length) {
+    return null;
+  }
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <Text type="secondary" style={{ fontSize: 12, marginLeft: 4 }}>
+        {title}
+      </Text>
+      <List
+        dataSource={items}
+        split={false}
+        renderItem={(item) => {
+          const active = item.session_id === sessionId;
+          const switching = switchingId === item.session_id;
+
+          return (
+            <List.Item style={{ padding: 0, marginTop: 8 }}>
+              <Button
+                block
+                loading={switching}
+                onClick={() => {
+                  void onSwitch(item.session_id);
+                }}
+                style={{
+                  height: "auto",
+                  textAlign: "left",
+                  borderRadius: 12,
+                  padding: "10px 12px",
+                  borderColor: active ? "#bfd0ff" : "#e6ebf5",
+                  background: active ? "#eaf1ff" : "#f7f9fd",
+                }}
+              >
+                <div style={{ width: "100%" }}>
+                  <Space size={8} align="center" style={{ marginBottom: 6 }}>
+                    <MessageOutlined style={{ color: "#6a7da6" }} />
+                    <Text strong style={{ color: "#213457" }}>
+                      {item.title}
+                    </Text>
+                  </Space>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    <ClockCircleOutlined style={{ marginRight: 4 }} />
+                    {formatTime(item.last_active_at)}
+                  </Text>
+                </div>
+              </Button>
+            </List.Item>
+          );
+        }}
+      />
     </div>
   );
 }

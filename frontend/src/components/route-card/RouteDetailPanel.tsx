@@ -1,13 +1,14 @@
-"use client";
+﻿"use client";
 
-import { ArrowLeftOutlined, CloseOutlined } from "@ant-design/icons";
-import { Button, Card, Collapse, Descriptions, Empty, Skeleton, Space, Tag, Typography } from "antd";
+import { CloseOutlined } from "@ant-design/icons";
+import { Button, Collapse, Descriptions, Empty, Skeleton, Space, Tag, Typography } from "antd";
 
 import type { RouteFullDetail } from "@/types";
 
 const { Paragraph, Text, Title } = Typography;
 
 interface RouteDetailPanelProps {
+  open: boolean;
   data: RouteFullDetail | null;
   loading: boolean;
   onClose: () => void;
@@ -64,50 +65,28 @@ const toScheduleDates = (value: unknown): string[] => {
   return Array.from(new Set(dates)).slice(0, 5);
 };
 
-export default function RouteDetailPanel({ data, loading, onClose }: RouteDetailPanelProps) {
-  if (loading) {
-    return (
-      <Card
-        title="路线详情"
-        extra={<Button icon={<CloseOutlined />} onClick={onClose} />}
-      >
-        <Skeleton active paragraph={{ rows: 10 }} />
-      </Card>
-    );
+export default function RouteDetailPanel({ open, data, loading, onClose }: RouteDetailPanelProps) {
+  if (!open) {
+    return null;
   }
 
-  if (!data) {
+  const body = (() => {
+    if (loading) {
+      return <Skeleton active paragraph={{ rows: 10 }} />;
+    }
+
+    if (!data) {
+      return <Empty description="暂无线路详情" />;
+    }
+
+    const { route, pricing, schedule } = data;
+    const dayPlans = toDayPlans(route.itinerary_json);
+    const scheduleDates = toScheduleDates(schedule?.schedules_json);
+
     return (
-      <Card
-        title="路线详情"
-        extra={<Button icon={<CloseOutlined />} onClick={onClose} />}
-      >
-        <Empty description="暂无路线详情" />
-      </Card>
-    );
-  }
-
-  const { route, pricing, schedule } = data;
-  const dayPlans = toDayPlans(route.itinerary_json);
-  const scheduleDates = toScheduleDates(schedule?.schedules_json);
-
-  return (
-    <Card
-      title={
-        <Space>
-          <Button type="text" icon={<ArrowLeftOutlined />} onClick={onClose}>
-            返回
-          </Button>
-          <Title level={5} style={{ margin: 0 }}>
-            路线详情
-          </Title>
-        </Space>
-      }
-      extra={<Button icon={<CloseOutlined />} onClick={onClose} />}
-    >
       <Space direction="vertical" size={16} style={{ width: "100%" }}>
         <div>
-          <Title level={5} style={{ margin: 0 }}>
+          <Title level={4} style={{ margin: 0 }}>
             {route.name}
           </Title>
           <Text type="secondary">供应商：{route.supplier}</Text>
@@ -122,7 +101,7 @@ export default function RouteDetailPanel({ data, loading, onClose }: RouteDetail
             </Space>
           </Descriptions.Item>
           <Descriptions.Item label="摘要">{route.summary}</Descriptions.Item>
-          <Descriptions.Item label="亮点摘要">
+          <Descriptions.Item label="亮点">
             <Paragraph style={{ marginBottom: 0 }}>{route.highlights || "暂无"}</Paragraph>
           </Descriptions.Item>
         </Descriptions>
@@ -142,9 +121,9 @@ export default function RouteDetailPanel({ data, loading, onClose }: RouteDetail
           )}
         </div>
 
-        <div id="route-detail-included">
+        <div>
           <Title level={5}>费用包含 / 不含</Title>
-          <Paragraph style={{ marginBottom: 8 }}>
+          <Paragraph style={{ marginBottom: 0 }}>
             <Text strong>费用包含：</Text>
             {route.included || "暂无"}
           </Paragraph>
@@ -162,9 +141,7 @@ export default function RouteDetailPanel({ data, loading, onClose }: RouteDetail
               <Descriptions.Item label="价格区间">
                 {pricing.price_min} - {pricing.price_max} {pricing.currency}
               </Descriptions.Item>
-              <Descriptions.Item label="价格更新时间">
-                {pricing.price_updated_at}
-              </Descriptions.Item>
+              <Descriptions.Item label="价格更新时间">{pricing.price_updated_at}</Descriptions.Item>
             </Descriptions>
           ) : (
             <Text type="secondary">暂无价格信息</Text>
@@ -173,7 +150,7 @@ export default function RouteDetailPanel({ data, loading, onClose }: RouteDetail
           <div style={{ marginTop: 12 }}>
             <Text strong>最近团期：</Text>
             {scheduleDates.length === 0 ? (
-              <Text type="secondary"> 暂无团期信息</Text>
+              <Text type="secondary">暂无团期信息</Text>
             ) : (
               <Space wrap style={{ marginLeft: 8 }}>
                 {scheduleDates.map((date) => (
@@ -186,6 +163,74 @@ export default function RouteDetailPanel({ data, loading, onClose }: RouteDetail
           </div>
         </div>
       </Space>
-    </Card>
+    );
+  })();
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1400,
+        background: "rgba(15, 23, 42, 0.35)",
+        backdropFilter: "blur(4px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          width: "min(86vw, 860px)",
+          aspectRatio: "1 / 1",
+          maxHeight: "86vh",
+          background: "#fff",
+          borderRadius: 20,
+          boxShadow: "0 24px 60px rgba(0, 0, 0, 0.28)",
+          border: "1px solid #e5e7eb",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          animation: "route-detail-pop 180ms ease-out",
+        }}
+      >
+        <div
+          style={{
+            height: 56,
+            borderBottom: "1px solid #eef0f4",
+            padding: "0 16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexShrink: 0,
+            background: "#fff",
+          }}
+        >
+          <Title level={5} style={{ margin: 0 }}>
+            路线详情
+          </Title>
+          <Button type="text" icon={<CloseOutlined />} onClick={onClose} aria-label="关闭详情" />
+        </div>
+
+        <div style={{ padding: 16, overflowY: "auto", minHeight: 0, flex: 1 }}>{body}</div>
+      </div>
+      <style jsx>{`
+        @keyframes route-detail-pop {
+          from {
+            transform: translateY(6px) scale(0.98);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+          }
+        }
+      `}</style>
+    </div>
   );
 }

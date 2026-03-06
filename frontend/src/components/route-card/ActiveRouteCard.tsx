@@ -18,9 +18,7 @@ interface ActiveRouteCardProps {
   loading?: boolean;
   compareChecked?: boolean;
   onCompareCheckedChange?: (checked: boolean) => void;
-  onViewPriceSchedule?: (route: ActiveRouteCardData) => void;
   onViewItinerary?: (route: ActiveRouteCardData) => void;
-  onAddCompare?: (route: ActiveRouteCardData) => void;
 }
 
 export default function ActiveRouteCard({
@@ -29,9 +27,7 @@ export default function ActiveRouteCard({
   loading = false,
   compareChecked = false,
   onCompareCheckedChange,
-  onViewPriceSchedule,
   onViewItinerary,
-  onAddCompare,
 }: ActiveRouteCardProps) {
   if (loading) {
     return (
@@ -100,24 +96,10 @@ export default function ActiveRouteCard({
           <Button
             type="primary"
             onClick={() => {
-              onViewPriceSchedule?.(route);
-            }}
-          >
-            查看价格&团期
-          </Button>
-          <Button
-            onClick={() => {
               onViewItinerary?.(route);
             }}
           >
-            查看详细行程
-          </Button>
-          <Button
-            onClick={() => {
-              onAddCompare?.(route);
-            }}
-          >
-            加入对比
+            查看详情
           </Button>
         </Space>
       </Space>

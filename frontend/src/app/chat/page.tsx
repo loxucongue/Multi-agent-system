@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { Alert, Button, Card, Spin } from "antd";
+import { Alert, Button, Spin } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
@@ -404,26 +404,15 @@ export default function ChatPage() {
 
           <div style={{ width: rightPanelWidth, borderLeft: "1px solid #f0f0f0", padding: 16, overflowY: "auto" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {routeDetailPanel ? (
-                <RouteDetailPanel data={routeDetailPanel.data} loading={routeDetailPanel.loading} onClose={closeRouteDetail} />
-              ) : (
-                <ActiveRouteCard
-                  activeRouteId={activeRouteId}
-                  route={activeRouteCard}
-                  compareChecked={activeCheckedForCompare}
-                  onCompareCheckedChange={setActiveCheckedForCompare}
-                  onViewPriceSchedule={(route) => {
-                    void handleOpenRouteDetail(route.id, true);
-                  }}
-                  onViewItinerary={(route) => {
-                    void handleOpenRouteDetail(route.id);
-                  }}
-                  onAddCompare={(route) => {
-                    const ids = [route.id, ...candidateCards.map((item) => item.id)].slice(0, 5);
-                    void handleCompare(ids);
-                  }}
-                />
-              )}
+              <ActiveRouteCard
+                activeRouteId={activeRouteId}
+                route={activeRouteCard}
+                compareChecked={activeCheckedForCompare}
+                onCompareCheckedChange={setActiveCheckedForCompare}
+                onViewItinerary={(route) => {
+                  void handleOpenRouteDetail(route.id);
+                }}
+              />
 
               <CandidateCards
                 cards={candidateCards}
@@ -437,12 +426,6 @@ export default function ChatPage() {
                   void handleCompare(routeIds);
                 }}
               />
-
-              <Card size="small" title="右侧面板宽度">
-                <div style={{ fontSize: 12, color: "#8c8c8c" }}>
-                  可拖拽分隔条调整宽度，最大扩展为当前窗口的三分之一。
-                </div>
-              </Card>
             </div>
           </div>
         </div>
@@ -465,6 +448,13 @@ export default function ChatPage() {
         onClose={() => {
           setLeadModalVisible(false);
         }}
+      />
+
+      <RouteDetailPanel
+        open={Boolean(routeDetailPanel)}
+        data={routeDetailPanel?.data ?? null}
+        loading={Boolean(routeDetailPanel?.loading)}
+        onClose={closeRouteDetail}
       />
     </ChatLayout>
   );

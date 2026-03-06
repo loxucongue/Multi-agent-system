@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 
-import { CompassOutlined, LoadingOutlined, WarningOutlined } from "@ant-design/icons";
-import { Empty, Skeleton, Spin } from "antd";
+import { CompassOutlined, LoadingOutlined, RobotOutlined, UserOutlined, WarningOutlined } from "@ant-design/icons";
+import { Empty, Skeleton, Space, Spin } from "antd";
 import { useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import ReactMarkdown from "react-markdown";
@@ -12,15 +12,9 @@ import type { ChatMessage } from "@/types";
 const STREAM_CURSOR = "▍";
 
 const markdownComponents = {
-  p: (props: React.HTMLAttributes<HTMLParagraphElement>) => (
-    <p style={{ margin: "0 0 8px 0" }} {...props} />
-  ),
-  ul: (props: React.HTMLAttributes<HTMLUListElement>) => (
-    <ul style={{ margin: "0 0 8px 18px" }} {...props} />
-  ),
-  ol: (props: React.HTMLAttributes<HTMLOListElement>) => (
-    <ol style={{ margin: "0 0 8px 18px" }} {...props} />
-  ),
+  p: (props: React.HTMLAttributes<HTMLParagraphElement>) => <p style={{ margin: "0 0 8px 0" }} {...props} />,
+  ul: (props: React.HTMLAttributes<HTMLUListElement>) => <ul style={{ margin: "0 0 8px 18px" }} {...props} />,
+  ol: (props: React.HTMLAttributes<HTMLOListElement>) => <ol style={{ margin: "0 0 8px 18px" }} {...props} />,
   li: (props: React.LiHTMLAttributes<HTMLLIElement>) => <li style={{ marginBottom: 4 }} {...props} />,
 };
 
@@ -31,19 +25,36 @@ const isSessionExpiredMessage = (message: ChatMessage): boolean => {
 const renderBubble = (message: ChatMessage) => {
   if (message.role === "user") {
     return (
-      <div key={message.id} style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
-        <div
-          style={{
-            maxWidth: "78%",
-            background: "#1677ff",
-            color: "#fff",
-            borderRadius: 12,
-            padding: "10px 14px",
-            lineHeight: 1.7,
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          {message.content}
+      <div key={message.id} style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
+        <div style={{ maxWidth: "78%", display: "flex", alignItems: "flex-start", gap: 8 }}>
+          <div
+            style={{
+              background: "linear-gradient(135deg, #1f5eff 0%, #2b6cff 100%)",
+              color: "#fff",
+              borderRadius: 16,
+              padding: "12px 16px",
+              lineHeight: 1.75,
+              whiteSpace: "pre-wrap",
+              boxShadow: "0 8px 20px rgba(31, 94, 255, 0.18)",
+            }}
+          >
+            {message.content}
+          </div>
+          <div
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: 15,
+              background: "#eef2fb",
+              border: "1px solid #dde5f5",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#5f7297",
+            }}
+          >
+            <UserOutlined />
+          </div>
         </div>
       </div>
     );
@@ -51,18 +62,34 @@ const renderBubble = (message: ChatMessage) => {
 
   if (message.role === "assistant") {
     return (
-      <div key={message.id} style={{ display: "flex", justifyContent: "flex-start", marginBottom: 12 }}>
-        <div
-          style={{
-            maxWidth: "78%",
-            background: "#fff",
-            border: "1px solid #f0f0f0",
-            borderRadius: 12,
-            padding: "10px 14px",
-            lineHeight: 1.75,
-          }}
-        >
-          <ReactMarkdown components={markdownComponents}>{message.content}</ReactMarkdown>
+      <div key={message.id} style={{ display: "flex", justifyContent: "flex-start", marginBottom: 14 }}>
+        <div style={{ maxWidth: "82%", display: "flex", alignItems: "flex-start", gap: 8 }}>
+          <div
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: 15,
+              background: "#1f7fd6",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#fff",
+            }}
+          >
+            <RobotOutlined />
+          </div>
+          <div
+            style={{
+              background: "#ffffff",
+              border: "1px solid #e6ebf5",
+              borderRadius: 16,
+              padding: "12px 16px",
+              lineHeight: 1.75,
+              boxShadow: "0 8px 18px rgba(30, 53, 90, 0.06)",
+            }}
+          >
+            <ReactMarkdown components={markdownComponents}>{message.content}</ReactMarkdown>
+          </div>
         </div>
       </div>
     );
@@ -70,14 +97,7 @@ const renderBubble = (message: ChatMessage) => {
 
   if (isSessionExpiredMessage(message)) {
     return (
-      <div
-        key={message.id}
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          marginBottom: 12,
-        }}
-      >
+      <div key={message.id} style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
         <div
           style={{
             display: "inline-flex",
@@ -99,21 +119,14 @@ const renderBubble = (message: ChatMessage) => {
   }
 
   return (
-    <div
-      key={message.id}
-      style={{
-        display: "flex",
-        justifyContent: "center",
-        marginBottom: 12,
-      }}
-    >
+    <div key={message.id} style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
       <div
         style={{
-          color: "#8c8c8c",
-          background: "#fafafa",
-          border: "1px solid #f0f0f0",
+          color: "#6c7894",
+          background: "#f6f8fc",
+          border: "1px solid #e8edf7",
           borderRadius: 999,
-          padding: "4px 10px",
+          padding: "5px 12px",
           fontSize: 12,
         }}
       >
@@ -145,14 +158,8 @@ export default function MessageList() {
 
   if (isLoading) {
     return (
-      <div ref={scrollRef} style={{ overflowY: "auto", flex: 1, paddingRight: 4 }}>
-        <Skeleton
-          active
-          avatar={{ shape: "circle" }}
-          paragraph={{ rows: 4 }}
-          title={{ width: "35%" }}
-          style={{ background: "#fff", borderRadius: 12, padding: 16 }}
-        />
+      <div ref={scrollRef} style={{ overflowY: "auto", flex: 1, padding: "8px 4px" }}>
+        <Skeleton active paragraph={{ rows: 4 }} title={{ width: "35%" }} style={{ background: "#fff", borderRadius: 14, padding: 16 }} />
       </div>
     );
   }
@@ -170,33 +177,44 @@ export default function MessageList() {
           padding: 24,
         }}
       >
-        <Empty
-          image={<CompassOutlined style={{ fontSize: 48, color: "#1677ff" }} />}
-          description="您好！我是旅游路线顾问，请告诉我您想去哪里旅游？"
-        />
+        <Empty image={<CompassOutlined style={{ fontSize: 48, color: "#1f5eff" }} />} description="您好！我是您的专属旅游顾问，请告诉我您想去哪里。" />
       </div>
     );
   }
 
   return (
-    <div ref={scrollRef} style={{ overflowY: "auto", flex: 1, paddingRight: 4 }}>
+    <div ref={scrollRef} style={{ overflowY: "auto", flex: 1, padding: "8px 4px" }}>
       {messages.map(renderBubble)}
 
       {isStreaming && currentStreamText ? (
         <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 12 }}>
-          <div
-            style={{
-              maxWidth: "78%",
-              background: "#fff",
-              border: "1px solid #f0f0f0",
-              borderRadius: 12,
-              padding: "10px 14px",
-              lineHeight: 1.75,
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            <ReactMarkdown components={markdownComponents}>{currentStreamText}</ReactMarkdown>
-            <span className="stream-cursor">{STREAM_CURSOR}</span>
+          <div style={{ maxWidth: "82%", display: "flex", alignItems: "flex-start", gap: 8 }}>
+            <div
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 15,
+                background: "#1f7fd6",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#fff",
+              }}
+            >
+              <RobotOutlined />
+            </div>
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e6ebf5",
+                borderRadius: 16,
+                padding: "12px 16px",
+                lineHeight: 1.75,
+              }}
+            >
+              <ReactMarkdown components={markdownComponents}>{currentStreamText}</ReactMarkdown>
+              <span className="stream-cursor">{STREAM_CURSOR}</span>
+            </div>
           </div>
         </div>
       ) : null}
@@ -209,10 +227,10 @@ export default function MessageList() {
               alignItems: "center",
               gap: 8,
               background: "#fff",
-              border: "1px solid #f0f0f0",
-              borderRadius: 12,
+              border: "1px solid #e6ebf5",
+              borderRadius: 14,
               padding: "10px 14px",
-              color: "#595959",
+              color: "#4d5d79",
             }}
           >
             <Spin indicator={<LoadingOutlined spin />} size="small" />

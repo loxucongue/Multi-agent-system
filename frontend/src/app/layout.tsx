@@ -1,10 +1,10 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import "antd/dist/reset.css";
 import "./globals.css";
 import Providers from "./providers";
 
 export const metadata: Metadata = {
-  title: "旅游路线智能顾问",
+  title: "凯撒旅游智能顾问",
 };
 
 export default function RootLayout({

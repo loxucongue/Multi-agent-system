@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 
 import { SendOutlined } from "@ant-design/icons";
-import { Button, Input, Skeleton, Space, Spin, Typography } from "antd";
+import { Button, Input, Typography } from "antd";
 import type { KeyboardEvent } from "react";
 import { useState } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -42,65 +42,48 @@ export default function ChatInput({ onSend }: ChatInputProps) {
     void doSend(text);
   };
 
-  const isEmptyState = messages.length === 0 && !isStreaming;
-  const isLoadingState = isStreaming;
+  const helperText = messages.length === 0 && !isStreaming ? "发送消息开始咨询" : "继续提问或使用快捷功能";
 
   return (
     <div
       style={{
-        borderTop: "1px solid #f0f0f0",
+        borderTop: "1px solid #e8edf7",
         paddingTop: 12,
-        marginTop: 12,
-        background: "#fff",
+        marginTop: 10,
+        background: "#f9fbff",
       }}
     >
-      {isLoadingState ? (
-        <div style={{ marginBottom: 8 }}>
-          <Skeleton
-            active
-            title={false}
-            paragraph={{ rows: 1, width: ["45%"] }}
-            style={{ marginBottom: 6 }}
-          />
-          <Space size={8}>
-            <Spin size="small" />
-            <Text type="secondary">正在生成回复...</Text>
-          </Space>
-        </div>
-      ) : null}
+      <div style={{ marginBottom: 8 }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {helperText}
+        </Text>
+      </div>
 
-      {isEmptyState ? (
-        <div style={{ marginBottom: 8 }}>
-          <Text type="secondary">发送消息开始咨询</Text>
-        </div>
-      ) : null}
-
-      {!isLoadingState && !isEmptyState ? (
-        <div style={{ marginBottom: 8 }}>
-          <Text type="secondary">继续提问或使用快捷功能</Text>
-        </div>
-      ) : null}
-
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
         <Input.TextArea
           value={text}
           onChange={(event) => setText(event.target.value)}
           onPressEnter={handlePressEnter}
-          placeholder="请输入您的需求，Enter 发送，Shift+Enter 换行"
+          placeholder="输入您的旅游需求，例如：想去三亚5天，预算1万元"
           autoSize={{ minRows: 2, maxRows: 6 }}
           disabled={isStreaming}
+          style={{
+            borderRadius: 16,
+            borderColor: "#dbe3f3",
+            background: "#fff",
+          }}
         />
         <Button
           type="primary"
+          shape="circle"
           icon={<SendOutlined />}
           loading={isStreaming}
           disabled={!text.trim() || isStreaming}
           onClick={() => {
             void doSend(text);
           }}
-        >
-          发送
-        </Button>
+          style={{ width: 44, height: 44 }}
+        />
       </div>
     </div>
   );
