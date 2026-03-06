@@ -55,6 +55,12 @@ def check_slots_ready(state: GraphState) -> str:
     return NODE_RESPONSE
 
 
+def _route_after_rematch(state: GraphState) -> str:
+    if state.get("request_human"):
+        return NODE_RESPONSE
+    return NODE_COLLECT
+
+
 def _route_by_intent(state: GraphState) -> str:
     intent = str(state.get("last_intent") or "route_recommend")
     mapping = {
@@ -106,7 +112,14 @@ def _build_workflow() -> StateGraph:
         },
     )
 
-    workflow.add_edge(NODE_REMATCH, NODE_COLLECT)
+    workflow.add_conditional_edges(
+        NODE_REMATCH,
+        _route_after_rematch,
+        {
+            NODE_RESPONSE: NODE_RESPONSE,
+            NODE_COLLECT: NODE_COLLECT,
+        },
+    )
     workflow.add_conditional_edges(
         NODE_COLLECT,
         check_slots_ready,
