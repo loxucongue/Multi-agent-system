@@ -35,8 +35,8 @@ async def build_intent_prompt(
         "\"external_info\":{\"info_type\":\"weather|flight|transport\",\"city\":\"str|null\",\"date\":\"str|null\","
         "\"origin_city\":\"str|null\",\"dest_city\":\"str|null\"},"
         "\"compare\":{\"route_indices\":\"list[int]|null\"},\"chitchat\":{}},\"reasoning\":\"str\"}\n\n"
-        f"会话状态:\n{json.dumps(state_payload, ensure_ascii=False)}\n\n"
-        f"历史对话(最近):\n{json.dumps(history, ensure_ascii=False)}"
+        f"会话状态:\n{json.dumps(state_payload, ensure_ascii=False, default=str)}\n\n"
+        f"历史对话(最近):\n{json.dumps(history, ensure_ascii=False, default=str)}"
     )
 
     return [

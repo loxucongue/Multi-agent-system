@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Button, Drawer, Empty, Space, Tag, Typography } from "antd";
 import type { ReactNode } from "react";
@@ -15,6 +15,8 @@ interface CompareDrawerProps {
   open: boolean;
   data: CompareData | null;
   onClose: () => void;
+  onAICompare?: () => void;
+  aiCompareLoading?: boolean;
 }
 
 interface RowDef {
@@ -48,9 +50,7 @@ const rowDefs: RowDef[] = [
   {
     key: "price_range",
     label: "价格区间",
-    render: (item) => (
-      <Text>{`${item.price_range.min} - ${item.price_range.max} ${item.price_range.currency}`}</Text>
-    ),
+    render: (item) => <Text>{`${item.price_range.min} - ${item.price_range.max} ${item.price_range.currency}`}</Text>,
   },
   {
     key: "next_schedule",
@@ -90,7 +90,7 @@ const rowDefs: RowDef[] = [
   },
 ];
 
-export default function CompareDrawer({ open, data, onClose }: CompareDrawerProps) {
+export default function CompareDrawer({ open, data, onClose, onAICompare, aiCompareLoading = false }: CompareDrawerProps) {
   const [pendingRouteId, setPendingRouteId] = useState<number | null>(null);
   const { connect } = useSSE();
   const { sendMessage, isStreaming } = useChatStore(
@@ -108,7 +108,7 @@ export default function CompareDrawer({ open, data, onClose }: CompareDrawerProp
     }
     setPendingRouteId(item.route_id);
     try {
-      const runId = await sendMessage(`我对 ${item.name} 感兴趣，想进一步了解`);
+      const runId = await sendMessage(`我对 ${item.name} 感兴趣，想进一步了解。`);
       if (runId) {
         connect(runId);
       }
@@ -196,23 +196,29 @@ export default function CompareDrawer({ open, data, onClose }: CompareDrawerProp
               display: "flex",
               gap: 10,
               flexWrap: "wrap",
-              justifyContent: "flex-end",
+              justifyContent: "space-between",
             }}
           >
-            {routes.map((item) => (
-              <Button
-                key={`interest-${item.route_id}`}
-                type="primary"
-                ghost
-                loading={pendingRouteId === item.route_id}
-                disabled={isStreaming || (pendingRouteId !== null && pendingRouteId !== item.route_id)}
-                onClick={() => {
-                  void handleInterest(item);
-                }}
-              >
-                我对 {item.name} 感兴趣
-              </Button>
-            ))}
+            <Button type="primary" loading={aiCompareLoading} disabled={isStreaming} onClick={onAICompare}>
+              AI 对比分析
+            </Button>
+
+            <Space wrap>
+              {routes.map((item) => (
+                <Button
+                  key={`interest-${item.route_id}`}
+                  type="primary"
+                  ghost
+                  loading={pendingRouteId === item.route_id}
+                  disabled={isStreaming || (pendingRouteId !== null && pendingRouteId !== item.route_id)}
+                  onClick={() => {
+                    void handleInterest(item);
+                  }}
+                >
+                  我对 {item.name} 感兴趣
+                </Button>
+              ))}
+            </Space>
           </div>
         </div>
       )}

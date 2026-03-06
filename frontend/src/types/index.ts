@@ -95,6 +95,10 @@ export interface CompareData {
   routes: CompareRouteItem[];
 }
 
+export interface CompareAIAnalysisResponse {
+  analysis: string;
+}
+
 /** Lead 提交响应 */
 export interface LeadResponse {
   success: boolean;

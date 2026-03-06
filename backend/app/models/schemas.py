@@ -410,6 +410,12 @@ class CompareData(BaseModel):
     routes: list[CompareRouteItem] = Field(default_factory=list)
 
 
+class CompareAIAnalysisResponse(BaseModel):
+    """AI generated comparison analysis text."""
+
+    analysis: str
+
+
 # ─────────────────────────────────────────────
 #  API request/response schemas
 # ─────────────────────────────────────────────

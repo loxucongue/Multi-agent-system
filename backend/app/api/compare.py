@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Body, HTTPException, status
 
 from app.models.schemas import (
+    CompareAIAnalysisResponse,
     CompareData,
     CompareNextSchedule,
     ComparePriceRange,
@@ -62,6 +63,50 @@ async def compare_routes(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="至少需要2条线路进行对比")
 
     return CompareData(routes=compare_items)
+
+
+@router.post("/{session_id}/compare/ai-analysis", response_model=CompareAIAnalysisResponse)
+async def compare_routes_ai_analysis(
+    session_id: str,
+    req: CompareRequest | None = Body(default=None),
+) -> CompareAIAnalysisResponse:
+    """Generate AI analysis based on selected route comparison data."""
+
+    await services.initialize()
+
+    if not await services.session_service.is_session_valid(session_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+
+    compare_data = await compare_routes(session_id=session_id, req=req)
+    prompt = _build_ai_compare_prompt(compare_data.routes)
+
+    fallback_text = _build_ai_compare_fallback(compare_data.routes)
+
+    try:
+        llm_client = services.llm_client
+    except Exception:
+        return CompareAIAnalysisResponse(analysis=fallback_text)
+
+    try:
+        analysis = await llm_client.chat(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是资深旅游顾问。请基于结构化对比数据给出中文分析："
+                        "1) 核心差异；2) 各路线适合人群；3) 明确推荐建议。"
+                        "不要编造不存在的数据。"
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+            max_tokens=900,
+        )
+        normalized = str(analysis or "").strip()
+        return CompareAIAnalysisResponse(analysis=normalized or fallback_text)
+    except Exception:
+        return CompareAIAnalysisResponse(analysis=fallback_text)
 
 
 async def _get_batch_items(route_ids: list[int]) -> list[RouteBatchItem]:
@@ -120,6 +165,41 @@ def _normalize_route_ids(route_ids: list[int] | None) -> list[int]:
         seen.add(value)
         deduped.append(value)
     return deduped
+
+
+def _build_ai_compare_prompt(routes: list[CompareRouteItem]) -> str:
+    lines: list[str] = ["请基于以下路线对比数据给出分析建议："]
+    for idx, item in enumerate(routes, start=1):
+        lines.append(
+            (
+                f"{idx}. {item.name}\n"
+                f"- 天数: {item.days}\n"
+                f"- 行程风格: {item.itinerary_style}\n"
+                f"- 价格: {item.price_range.min}~{item.price_range.max} {item.price_range.currency}\n"
+                f"- 最近团期: {item.next_schedule.date or '暂无'}\n"
+                f"- 亮点: {', '.join(item.highlights) if item.highlights else '暂无'}\n"
+                f"- 适合人群: {', '.join(item.suitable_for) if item.suitable_for else '暂无'}\n"
+                f"- 费用包含摘要: {item.included_summary or '暂无'}\n"
+                f"- 注意事项摘要: {item.notice_summary or '暂无'}"
+            )
+        )
+    lines.append("请输出：核心差异、推荐顺序、适合谁选。")
+    return "\n\n".join(lines)
+
+
+def _build_ai_compare_fallback(routes: list[CompareRouteItem]) -> str:
+    if not routes:
+        return "当前没有可分析的对比数据。"
+
+    names = [item.name for item in routes if item.name]
+    if len(names) == 1:
+        return f"目前仅有 {names[0]}，建议再选择至少一条线路进行对比分析。"
+
+    return (
+        f"已完成基础对比：{', '.join(names)}。\n"
+        "建议优先看三点：预算区间、行程风格、最近团期；"
+        "若您告诉我偏好（预算/节奏/人群），我可以给出更明确推荐。"
+    )
 
 
 def _to_text_list(value: Any) -> list[str]:

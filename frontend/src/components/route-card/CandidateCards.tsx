@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { Button, Card, Checkbox, Skeleton, Space, Tag, Typography } from "antd";
+import { Button, Card, Checkbox, Empty, Skeleton, Space, Tag, Typography } from "antd";
 import { useEffect, useMemo, useState } from "react";
 
 import type { RouteCard } from "@/types";
@@ -11,6 +11,7 @@ interface CandidateCardsProps {
   cards: RouteCard[];
   onSelect: (routeId: number) => void;
   onCompare: (routeIds: number[]) => void;
+  onGuideRematch?: () => void;
   loading?: boolean;
 }
 
@@ -19,27 +20,18 @@ const formatPriceRange = (card: RouteCard): string => {
     return "价格待更新";
   }
   if (card.price_min !== null && card.price_max !== null) {
-    return `￥${card.price_min} - ￥${card.price_max}`;
+    return `¥${card.price_min} - ¥${card.price_max}`;
   }
   if (card.price_min !== null) {
-    return `￥${card.price_min} 起`;
+    return `¥${card.price_min} 起`;
   }
-  return `最高 ￥${card.price_max}`;
+  return `最高 ¥${card.price_max}`;
 };
 
-export default function CandidateCards({
-  cards,
-  onSelect,
-  onCompare,
-  loading = false,
-}: CandidateCardsProps) {
+export default function CandidateCards({ cards, onSelect, onCompare, onGuideRematch, loading = false }: CandidateCardsProps) {
   const [selectedRouteIds, setSelectedRouteIds] = useState<number[]>([]);
 
   useEffect(() => {
-    if (cards.length === 0) {
-      setSelectedRouteIds([]);
-      return;
-    }
     const validIds = new Set(cards.map((card) => card.id));
     setSelectedRouteIds((prev) => prev.filter((id) => validIds.has(id)));
   }, [cards]);
@@ -58,10 +50,7 @@ export default function CandidateCards({
   const toggleSelection = (routeId: number, checked: boolean) => {
     setSelectedRouteIds((prev) => {
       if (checked) {
-        if (prev.includes(routeId)) {
-          return prev;
-        }
-        return [...prev, routeId];
+        return prev.includes(routeId) ? prev : [...prev, routeId];
       }
       return prev.filter((id) => id !== routeId);
     });
@@ -82,7 +71,16 @@ export default function CandidateCards({
   }
 
   if (cards.length === 0) {
-    return null;
+    return (
+      <Card style={{ marginTop: 12 }}>
+        <Empty description="当前没有符合条件的候选线路" />
+        {onGuideRematch ? (
+          <div style={{ marginTop: 8, textAlign: "center" }}>
+            <Button onClick={onGuideRematch}>重新引导匹配需求</Button>
+          </div>
+        ) : null}
+      </Card>
+    );
   }
 
   return (
@@ -96,10 +94,7 @@ export default function CandidateCards({
               style={{ width: 280 }}
               title={
                 <Space size={8}>
-                  <Checkbox
-                    checked={checked}
-                    onChange={(event) => toggleSelection(card.id, event.target.checked)}
-                  />
+                  <Checkbox checked={checked} onChange={(event) => toggleSelection(card.id, event.target.checked)} />
                   <Title level={5} style={{ margin: 0, maxWidth: 200 }}>
                     {card.name}
                   </Title>
@@ -119,12 +114,7 @@ export default function CandidateCards({
 
                 <Text strong>{formatPriceRange(card)}</Text>
 
-                <Button
-                  block
-                  onClick={() => {
-                    onSelect(card.id);
-                  }}
-                >
+                <Button block onClick={() => onSelect(card.id)}>
                   查看详情
                 </Button>
               </Space>
@@ -145,7 +135,7 @@ export default function CandidateCards({
           flexWrap: "wrap",
         }}
       >
-        <Text type="secondary">已选 {selectedCount} 条路线</Text>
+        <Text type="secondary">已选 {selectedCount} 条线路</Text>
         <Button
           type="primary"
           disabled={!canCompare}

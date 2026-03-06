@@ -49,8 +49,8 @@ async def build_response_prompt(
     user_prompt = (
         f"intent: {intent}\n"
         f"用户消息:\n{user_message}\n\n"
-        f"工具结果:\n{json.dumps(tool_results or {}, ensure_ascii=False)}\n\n"
-        f"会话状态:\n{json.dumps(state_payload, ensure_ascii=False)}\n\n"
+        f"工具结果:\n{json.dumps(tool_results or {}, ensure_ascii=False, default=str)}\n\n"
+        f"会话状态:\n{json.dumps(state_payload, ensure_ascii=False, default=str)}\n\n"
         "请只输出最终回复文本。"
     )
 

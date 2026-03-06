@@ -21,8 +21,8 @@ async def build_collect_prompt(
 
     user_prompt = (
         f"用户最新消息:\n{user_message}\n\n"
-        f"当前用户画像:\n{json.dumps(user_profile, ensure_ascii=False)}\n\n"
-        f"缺失槽位:\n{json.dumps(missing_slots, ensure_ascii=False)}\n\n"
+        f"当前用户画像:\n{json.dumps(user_profile, ensure_ascii=False, default=str)}\n\n"
+        f"缺失槽位:\n{json.dumps(missing_slots, ensure_ascii=False, default=str)}\n\n"
         "请按要求只输出 JSON。"
     )
 

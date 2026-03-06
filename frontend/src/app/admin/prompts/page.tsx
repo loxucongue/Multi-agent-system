@@ -32,8 +32,11 @@ export default function AdminPromptsPage() {
   const [loadingNodes, setLoadingNodes] = useState(false);
   const [nodeNames, setNodeNames] = useState<string[]>([]);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+
   const [versions, setVersions] = useState<PromptVersion[]>([]);
+  const [previewVersion, setPreviewVersion] = useState<PromptVersion | null>(null);
   const [loadingVersions, setLoadingVersions] = useState(false);
+
   const [createOpen, setCreateOpen] = useState(false);
   const [newContent, setNewContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -59,11 +62,11 @@ export default function AdminPromptsPage() {
         names = Array.from(new Set(active.map((item) => item.node_name))).sort();
       }
       setNodeNames(names);
-      if (selectedNode && names.length > 0 && !names.includes(selectedNode)) {
-        setSelectedNode(names[0]);
-      } else if (!selectedNode && names.length > 0) {
-        setSelectedNode(names[0]);
+
+      if (selectedNode && names.includes(selectedNode)) {
+        return;
       }
+      setSelectedNode(names[0] ?? null);
     } catch (error) {
       handleAuthError(error);
     } finally {
@@ -76,9 +79,12 @@ export default function AdminPromptsPage() {
     try {
       const rows = await authedFetch<PromptVersion[]>(`/admin/prompts/${encodeURIComponent(nodeName)}`);
       setVersions(rows);
+      const active = rows.find((item) => item.is_active) ?? null;
+      setPreviewVersion(active ?? rows[0] ?? null);
     } catch (error) {
       handleAuthError(error);
       setVersions([]);
+      setPreviewVersion(null);
     } finally {
       setLoadingVersions(false);
     }
@@ -90,20 +96,28 @@ export default function AdminPromptsPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedNode) {
-      void loadVersions(selectedNode);
+    if (!selectedNode) {
+      setVersions([]);
+      setPreviewVersion(null);
+      return;
     }
+    void loadVersions(selectedNode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNode]);
 
   const columns: ColumnsType<PromptVersion> = useMemo(
     () => [
-      { title: "版本", dataIndex: "version", key: "version", width: 90 },
+      {
+        title: "版本",
+        dataIndex: "version",
+        key: "version",
+        width: 90,
+      },
       {
         title: "状态",
         dataIndex: "is_active",
         key: "is_active",
-        width: 120,
+        width: 110,
         render: (active: boolean) => (active ? <Tag color="green">active</Tag> : <Tag>inactive</Tag>),
       },
       {
@@ -111,7 +125,7 @@ export default function AdminPromptsPage() {
         dataIndex: "content",
         key: "content",
         ellipsis: true,
-        render: (value: string) => <Text>{value.slice(0, 100)}</Text>,
+        render: (value: string) => <Text>{value.slice(0, 120)}</Text>,
       },
       {
         title: "创建时间",
@@ -123,30 +137,35 @@ export default function AdminPromptsPage() {
       {
         title: "操作",
         key: "actions",
-        width: 130,
+        width: 180,
         render: (_, row) => (
-          <Button
-            size="small"
-            type="primary"
-            ghost
-            disabled={row.is_active}
-            onClick={() => {
-              void (async () => {
-                try {
-                  await authedFetch(`/admin/prompts/${encodeURIComponent(row.node_name)}/${row.version}/activate`, {
-                    method: "PUT",
-                  });
-                  message.success("版本已激活");
-                  await loadVersions(row.node_name);
-                  await loadNodes();
-                } catch (error) {
-                  handleAuthError(error);
-                }
-              })();
-            }}
-          >
-            激活
-          </Button>
+          <Space>
+            <Button size="small" onClick={() => setPreviewVersion(row)}>
+              预览
+            </Button>
+            <Button
+              size="small"
+              type="primary"
+              ghost
+              disabled={row.is_active}
+              onClick={() => {
+                void (async () => {
+                  try {
+                    await authedFetch(`/admin/prompts/${encodeURIComponent(row.node_name)}/${row.version}/activate`, {
+                      method: "PUT",
+                    });
+                    message.success("版本已激活");
+                    await loadVersions(row.node_name);
+                    await loadNodes();
+                  } catch (error) {
+                    handleAuthError(error);
+                  }
+                })();
+              }}
+            >
+              激活
+            </Button>
+          </Space>
         ),
       },
     ],
@@ -181,6 +200,15 @@ export default function AdminPromptsPage() {
         title={selectedNode ? `版本列表 · ${selectedNode}` : "版本列表"}
         extra={
           <Space>
+            <Button
+              disabled={!versions.length}
+              onClick={() => {
+                const active = versions.find((item) => item.is_active) ?? null;
+                setPreviewVersion(active ?? versions[0] ?? null);
+              }}
+            >
+              预览当前激活
+            </Button>
             <Button disabled={!selectedNode} onClick={() => selectedNode && void loadVersions(selectedNode)}>
               刷新
             </Button>
@@ -197,7 +225,30 @@ export default function AdminPromptsPage() {
           loading={loadingVersions}
           pagination={{ pageSize: 8 }}
           scroll={{ x: 900 }}
+          onRow={(record) => ({
+            onClick: () => setPreviewVersion(record),
+          })}
         />
+
+        <Card
+          size="small"
+          style={{ marginTop: 12 }}
+          title={
+            previewVersion
+              ? `提示词预览 · v${previewVersion.version}${previewVersion.is_active ? "（active）" : ""}`
+              : "提示词预览"
+          }
+        >
+          {previewVersion ? (
+            <TextArea
+              readOnly
+              value={previewVersion.content}
+              autoSize={{ minRows: 12, maxRows: 24 }}
+            />
+          ) : (
+            <Text type="secondary">当前节点暂无可预览内容</Text>
+          )}
+        </Card>
       </Card>
 
       <Modal
@@ -211,7 +262,7 @@ export default function AdminPromptsPage() {
         }}
         onOk={() => {
           if (!selectedNode || !newContent.trim()) {
-            message.warning("请输入内容");
+            message.warning("请输入 Prompt 内容");
             return;
           }
           void (async () => {

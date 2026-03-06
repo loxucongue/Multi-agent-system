@@ -1,8 +1,7 @@
-"""Final response generation node."""
+﻿"""Final response generation node."""
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from app.graph.state import GraphState, STAGE_COMPARING, STAGE_RECOMMENDED
@@ -24,10 +23,7 @@ async def response_generation_node(state: GraphState) -> dict[str, Any]:
         tool_results = {}
 
     existing_text = str(state.get("response_text") or "").strip()
-    reuse_existing_text = _should_reuse_existing_text(
-        intent=intent,
-        tool_results=tool_results,
-    )
+    reuse_existing_text = _should_reuse_existing_text(intent=intent, tool_results=tool_results)
     response_text = (
         existing_text
         if existing_text and reuse_existing_text
@@ -54,6 +50,7 @@ def _should_reuse_existing_text(intent: str, tool_results: dict[str, Any]) -> bo
             "route_details" in tool_results
             or "candidates" in tool_results
             or "candidates_without_id" in tool_results
+            or "candidates_filtered_out" in tool_results
         ):
             return False
     return True
@@ -68,9 +65,8 @@ async def _generate_text(
     """Generate final text from structured data using streaming LLM output."""
 
     if str(state.get("error") or "").strip():
-        return "抱歉，获取信息时遇到了问题，请稍后再试。"
+        return "抱歉，处理请求时遇到问题，请稍后重试。"
 
-    # deterministic fallback when node already indicates error
     if tool_results.get("error"):
         return _fallback_text_from_tool_results(intent, tool_results)
 
@@ -78,16 +74,21 @@ async def _generate_text(
         route_details = tool_results.get("route_details")
         candidates = tool_results.get("candidates")
         candidates_without_id = tool_results.get("candidates_without_id")
+        candidates_filtered_out = tool_results.get("candidates_filtered_out")
+
         has_results = (
-            isinstance(route_details, list)
-            and bool(route_details)
+            isinstance(route_details, list) and bool(route_details)
         ) or (
-            isinstance(candidates, list)
-            and bool(candidates)
+            isinstance(candidates, list) and bool(candidates)
         )
+
         if not has_results:
             if isinstance(candidates_without_id, list) and candidates_without_id:
-                return "我找到了一些相关线路信息，但数据格式有误，正在修复中。请稍后重试，或换个关键词描述您的需求。"
+                return "我找到了相关线路，但数据格式异常，正在修复。请稍后重试或换个关键词。"
+
+            if isinstance(candidates_filtered_out, list) and candidates_filtered_out:
+                return "暂时没有筛选到符合您当前条件的线路。您可以补充预算、出发时间或偏好，我马上重新匹配。"
+
             profile = state.get("user_profile")
             destinations: list[str] = []
             if hasattr(profile, "destinations") and isinstance(profile.destinations, list):
@@ -98,9 +99,8 @@ async def _generate_text(
                     destinations = [str(item).strip() for item in raw_destinations if str(item).strip()]
 
             if destinations:
-                dest = "、".join(destinations)
-                return f"抱歉，暂未找到与「{dest}」相关的线路。您可以换个目的地或调整条件，我重新为您匹配。"
-            return "抱歉，暂未匹配到合适的线路。您可以告诉我想去的目的地和大致天数，我再为您查找。"
+                return f"抱歉，暂未找到与「{'、'.join(destinations)}」相关的线路。您可以调整条件后我再为您匹配。"
+            return "抱歉，暂未匹配到合适的线路。请告诉我目的地和天数，我继续为您查找。"
 
     serializable_state = _state_for_prompt(state)
     messages = await build_response_prompt(
@@ -116,13 +116,12 @@ async def _generate_text(
             {
                 "role": "system",
                 "content": (
-                    "请在回答末尾增加一句简短引导，回应用户提到的次要意图："
-                    f"{secondary_intent}。引导语自然，不要模板化。"
+                    "请在回答末尾追加一句自然引导，回应用户提到的次要意图："
+                    f"{secondary_intent}。引导语要自然，不要模板化。"
                 ),
             }
         )
 
-    # hard constraint to avoid hallucination
     messages.append(
         {
             "role": "system",
@@ -137,7 +136,7 @@ async def _generate_text(
             if delta:
                 chunks.append(delta)
     except Exception as exc:
-        _LOGGER.warning(f"response generation stream failed, fallback text used: {exc}")
+        _LOGGER.warning("response generation stream failed, fallback text used: %s", exc)
         return _fallback_text_from_tool_results(intent, tool_results)
     finally:
         if should_close:
@@ -161,21 +160,12 @@ def _build_ui_actions(intent: str, tool_results: dict[str, Any], state: GraphSta
 
         candidate_route_ids = _normalize_int_list(state.get("candidate_route_ids", []))
         if candidate_route_ids:
-            actions.append(
-                {
-                    "action": "show_candidates",
-                    "payload": {"route_ids": candidate_route_ids},
-                }
-            )
+            actions.append({"action": "show_candidates", "payload": {"route_ids": candidate_route_ids}})
 
     elif intent == "compare":
         compare_data = tool_results.get("compare_data")
         if isinstance(compare_data, dict):
             actions.append({"action": "show_compare", "payload": compare_data})
-
-    elif intent == "price_schedule":
-        # no extra ui action required
-        pass
 
     return actions
 
@@ -271,6 +261,7 @@ def _state_for_prompt(state: GraphState) -> dict[str, Any]:
 def _to_route_card(detail: dict[str, Any]) -> dict[str, Any]:
     route_id = _to_int_or_none(detail.get("id") or detail.get("route_id"))
     return {
+        "id": route_id,
         "route_id": route_id,
         "name": str(detail.get("name") or ""),
         "summary": str(detail.get("summary") or ""),
@@ -287,16 +278,13 @@ def _fallback_text_from_tool_results(intent: str, tool_results: dict[str, Any]) 
             names = [str(item.get("name")) for item in cards if isinstance(item, dict) and item.get("name")]
             if names:
                 return "我为您整理了这些线路：" + "、".join(names)
-        return "我已整理好推荐线路，您可以先看看候选方案。"
+        return "我已整理好推荐线路，您可以先看右侧候选方案。"
 
     if intent == "price_schedule":
-        price = tool_results.get("price")
-        schedule = tool_results.get("schedule")
-        if isinstance(price, dict) or isinstance(schedule, dict):
-            return (
-                f"这条线路价格更新于 {tool_results.get('price_updated_at') or '未知时间'}，"
-                f"团期更新于 {tool_results.get('schedule_updated_at') or '未知时间'}。"
-            )
+        price_updated_at = tool_results.get("price_updated_at") or "未知时间"
+        schedule_updated_at = tool_results.get("schedule_updated_at") or "未知时间"
+        if isinstance(tool_results.get("price"), dict) or isinstance(tool_results.get("schedule"), dict):
+            return f"价格更新时间：{price_updated_at}；团期更新时间：{schedule_updated_at}。"
         return "暂时未查到该线路的价格和团期信息。"
 
     if intent == "compare":
@@ -304,21 +292,22 @@ def _fallback_text_from_tool_results(intent: str, tool_results: dict[str, Any]) 
         if isinstance(compare_data, dict):
             routes = compare_data.get("routes")
             if isinstance(routes, list) and routes:
-                names = [str(item.get("name")) for item in routes if isinstance(item, dict)]
-                return "已为您整理对比：" + "、".join([n for n in names if n])
+                names = [str(item.get("name")) for item in routes if isinstance(item, dict) and item.get("name")]
+                if names:
+                    return "已为您整理对比：" + "、".join(names)
         return "暂时无法生成对比结果。"
 
     if intent == "visa":
         answer = tool_results.get("answer")
         if isinstance(answer, str) and answer.strip():
             return answer.strip()
-        return "签证信息已为您整理完成。"
+        return "签证信息已整理完成。"
 
     if intent == "external_info":
         output = tool_results.get("output")
         if isinstance(output, str) and output.strip():
             return output.strip()
-        return "外部信息已查询完成。"
+        return "外部信息查询完成。"
 
     return "我已根据当前信息为您整理好结果。"
 

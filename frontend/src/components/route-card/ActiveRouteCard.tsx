@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { Button, Card, Empty, Skeleton, Space, Tag, Typography } from "antd";
+import { Button, Card, Checkbox, Empty, Skeleton, Space, Tag, Typography } from "antd";
 
 import type { RouteCard } from "@/types";
 
@@ -16,6 +16,8 @@ interface ActiveRouteCardProps {
   activeRouteId: number | null;
   route: ActiveRouteCardData | null;
   loading?: boolean;
+  compareChecked?: boolean;
+  onCompareCheckedChange?: (checked: boolean) => void;
   onViewPriceSchedule?: (route: ActiveRouteCardData) => void;
   onViewItinerary?: (route: ActiveRouteCardData) => void;
   onAddCompare?: (route: ActiveRouteCardData) => void;
@@ -25,6 +27,8 @@ export default function ActiveRouteCard({
   activeRouteId,
   route,
   loading = false,
+  compareChecked = false,
+  onCompareCheckedChange,
   onViewPriceSchedule,
   onViewItinerary,
   onAddCompare,
@@ -40,7 +44,7 @@ export default function ActiveRouteCard({
   if (!activeRouteId || !route) {
     return (
       <Card>
-        <Empty description="还没有推荐线路，试试告诉我您想去哪里？" />
+        <Empty description="还没有当前推荐线路，先告诉我目的地和天数吧" />
       </Card>
     );
   }
@@ -48,7 +52,14 @@ export default function ActiveRouteCard({
   return (
     <Card
       title={
-        <Space direction="vertical" size={2}>
+        <Space direction="vertical" size={6} style={{ width: "100%" }}>
+          <Space size={8} align="center">
+            <Checkbox
+              checked={compareChecked}
+              onChange={(event) => onCompareCheckedChange?.(event.target.checked)}
+            />
+            <Text>加入对比</Text>
+          </Space>
           <Title level={5} style={{ margin: 0 }}>
             {route.name}
           </Title>
