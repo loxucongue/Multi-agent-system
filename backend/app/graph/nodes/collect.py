@@ -207,11 +207,12 @@ def _apply_suggested_profile_patch(profile: UserProfile, patch_payload: Any) -> 
     if not isinstance(patch_payload, dict):
         return profile
 
+    is_new_intent = bool(patch_payload.get("is_new_intent", False))
     user_profile_patch = patch_payload.get("user_profile")
     if not isinstance(user_profile_patch, dict):
         return profile
 
-    merged = profile.model_dump()
+    merged = UserProfile().model_dump() if is_new_intent else profile.model_dump()
     for key in (
         "origin_city",
         "days_range",
