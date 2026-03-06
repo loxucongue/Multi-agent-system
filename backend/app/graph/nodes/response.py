@@ -75,6 +75,31 @@ async def _generate_text(
     if tool_results.get("error"):
         return _fallback_text_from_tool_results(intent, tool_results)
 
+    if intent == "route_recommend":
+        route_details = tool_results.get("route_details")
+        candidates = tool_results.get("candidates")
+        has_results = (
+            isinstance(route_details, list)
+            and bool(route_details)
+        ) or (
+            isinstance(candidates, list)
+            and bool(candidates)
+        )
+        if not has_results:
+            profile = state.get("user_profile")
+            destinations: list[str] = []
+            if hasattr(profile, "destinations") and isinstance(profile.destinations, list):
+                destinations = [str(item).strip() for item in profile.destinations if str(item).strip()]
+            elif isinstance(profile, dict):
+                raw_destinations = profile.get("destinations")
+                if isinstance(raw_destinations, list):
+                    destinations = [str(item).strip() for item in raw_destinations if str(item).strip()]
+
+            if destinations:
+                dest = "、".join(destinations)
+                return f"抱歉，暂未找到与「{dest}」相关的线路。您可以换个目的地或调整条件，我重新为您匹配。"
+            return "抱歉，暂未匹配到合适的线路。您可以告诉我想去的目的地和大致天数，我再为您查找。"
+
     serializable_state = _state_for_prompt(state)
     messages = await build_response_prompt(
         intent=intent,
@@ -188,6 +213,11 @@ def _build_state_patches(intent: str, tool_results: dict[str, Any], state: Graph
     """Build persisted state patch from current node output context."""
 
     patches: dict[str, Any] = {}
+    user_profile = state.get("user_profile")
+    if hasattr(user_profile, "model_dump"):
+        patches["user_profile"] = user_profile.model_dump()
+    elif isinstance(user_profile, dict):
+        patches["user_profile"] = user_profile
 
     if intent == "route_recommend":
         active_route_id = _to_int_or_none(state.get("active_route_id"))

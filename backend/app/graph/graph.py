@@ -218,7 +218,11 @@ async def run_graph_streaming(
 
                 final_state.update(node_output)
 
-                if "response_text" in node_output and node_output["response_text"]:
+                if (
+                    node_name == NODE_RESPONSE
+                    and "response_text" in node_output
+                    and node_output["response_text"]
+                ):
                     await _push("token", {"text": node_output["response_text"], "node": node_name})
 
                 if node_name == NODE_COLLECT and node_output.get("slots_ready"):
