@@ -16,6 +16,33 @@ _LOGGER = get_logger(__name__)
 
 _DEFAULT_NATIONALITY = "中国大陆"
 _DEST_STOPWORDS = {"办理", "咨询", "申请", "需要", "材料", "流程", "怎么办", "如何", "签证"}
+_DOMESTIC_CITIES = {
+    "北京",
+    "上海",
+    "广州",
+    "深圳",
+    "成都",
+    "重庆",
+    "杭州",
+    "南京",
+    "武汉",
+    "西安",
+    "长沙",
+    "青岛",
+    "大理",
+    "丽江",
+    "三亚",
+    "厦门",
+    "桂林",
+    "拉萨",
+    "哈尔滨",
+    "苏州",
+    "黄山",
+    "张家界",
+    "九寨沟",
+    "敦煌",
+    "香格里拉",
+}
 
 _NATIONALITY_KEYWORDS = {
     "中国大陆": ("中国大陆", "大陆护照", "内地护照"),
@@ -43,11 +70,13 @@ async def visa_kb_search_node(state: GraphState) -> dict[str, Any]:
     depart_date = (profile.depart_date_range or "").strip() or None
 
     if not country:
+        ask_text = "请先告诉我您要办理哪个国家或地区的签证，我再帮您查询具体要求。"
         return {
+            "response_text": ask_text,
             "tool_results": {
-                "answer": "请先告诉我要办理哪个国家的签证，我再为您查询具体要求。",
+                "answer": ask_text,
                 "sources": [],
-            }
+            },
         }
 
     query = await _rewrite_visa_query(user_message, state) or _build_visa_query(
@@ -98,26 +127,33 @@ def _ensure_profile(value: Any) -> UserProfile:
 
 
 def _extract_destination_country(user_message: str, profile: UserProfile) -> str | None:
-    # 1) from user message: "日本签证" / "去日本签证"
     match = re.search(r"([\u4e00-\u9fa5A-Za-z]{1,12})签证", user_message)
     if match:
         text = _clean_country_text(match.group(1))
-        if text:
+        if _is_overseas_destination_candidate(text):
             return text
 
     match = re.search(r"去([\u4e00-\u9fa5A-Za-z]{1,12})", user_message)
     if match:
         text = _clean_country_text(match.group(1))
-        if text:
+        if _is_overseas_destination_candidate(text):
             return text
 
-    # 2) from profile destinations
     for destination in profile.destinations:
         cleaned = _clean_country_text(str(destination))
-        if cleaned:
+        if _is_overseas_destination_candidate(cleaned):
             return cleaned
 
     return None
+
+
+def _is_overseas_destination_candidate(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    if text in _DOMESTIC_CITIES:
+        return False
+    return True
 
 
 def _clean_country_text(value: str) -> str:
@@ -134,7 +170,6 @@ def _clean_country_text(value: str) -> str:
                 text = text[len(token) :].strip()
                 changed = True
                 break
-    text = text.strip()
 
     if not text or text in _DEST_STOPWORDS:
         return ""
@@ -143,7 +178,7 @@ def _clean_country_text(value: str) -> str:
 
 def _extract_nationality(user_message: str) -> str:
     explicit_match = re.search(
-        r"(?:国籍|我是|持|拿|用)[^，。,.!?]{0,8}(中国大陆|中国香港|中国澳门|中国台湾|美国|加拿大|新加坡|日本)",
+        r"(?:国籍|我是|持有)[^，。,.!?！？]{0,8}(中国大陆|中国香港|中国澳门|中国台湾|美国|加拿大|新加坡|日本)",
         user_message,
     )
     if explicit_match:
@@ -205,7 +240,7 @@ def _normalize_rewritten_query(value: str) -> str | None:
     text = text.replace("\r", "\n").strip()
     if "\n" in text:
         text = text.splitlines()[0].strip()
-    text = text.strip("“”\"' ")
+    text = text.strip("\"' ")
     return text or None
 
 
