@@ -18,6 +18,7 @@ async def routes_kb_search_node(state: GraphState) -> dict[str, Any]:
 
     profile = _ensure_profile(state.get("user_profile"))
     trace_id = str(state.get("trace_id") or "-")
+    session_id = str(state.get("session_id") or "")
 
     workflow_service, route_service = _resolve_search_services()
 
@@ -25,7 +26,7 @@ async def routes_kb_search_node(state: GraphState) -> dict[str, Any]:
     destination_only_query = _build_destination_query(profile)
     has_extra_query_conditions = _has_extra_query_conditions(profile)
 
-    candidates = await _search_candidates(workflow_service, primary_query, trace_id) if primary_query else []
+    candidates = await _search_candidates(workflow_service, primary_query, trace_id, session_id) if primary_query else []
 
     should_retry_with_loose_query = (
         not candidates
@@ -34,7 +35,7 @@ async def routes_kb_search_node(state: GraphState) -> dict[str, Any]:
         and destination_only_query != primary_query
     )
     if should_retry_with_loose_query:
-        candidates = await _search_candidates(workflow_service, destination_only_query, trace_id)
+        candidates = await _search_candidates(workflow_service, destination_only_query, trace_id, session_id)
 
     if not candidates:
         hot_routes = await route_service.get_hot_routes()
@@ -85,9 +86,9 @@ def _has_extra_query_conditions(profile: UserProfile) -> bool:
     )
 
 
-async def _search_candidates(workflow_service: Any, query: str, trace_id: str) -> list[dict[str, Any]]:
+async def _search_candidates(workflow_service: Any, query: str, trace_id: str, session_id: str) -> list[dict[str, Any]]:
     try:
-        result = await workflow_service.run_route_search(query=query, trace_id=trace_id)
+        result = await workflow_service.run_route_search(query=query, trace_id=trace_id, session_id=session_id)
     except Exception as exc:
         _LOGGER.warning(f"route kb search failed query={query!r}: {exc}")
         return []

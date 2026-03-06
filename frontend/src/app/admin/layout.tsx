@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ApiOutlined,
   AppstoreOutlined,
   DatabaseOutlined,
   FileSearchOutlined,
@@ -22,6 +23,7 @@ const MENU_ITEMS: MenuProps["items"] = [
   { key: "/admin/prompts", icon: <AppstoreOutlined />, label: "Prompt管理" },
   { key: "/admin/kb", icon: <DatabaseOutlined />, label: "知识库管理" },
   { key: "/admin/logs", icon: <FileSearchOutlined />, label: "日志查看" },
+  { key: "/admin/coze-logs", icon: <ApiOutlined />, label: "Coze调用日志" },
   { key: "/admin/config", icon: <SettingOutlined />, label: "系统配置" },
 ];
 
@@ -69,6 +71,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
     if (pathname.startsWith("/admin/logs")) {
       return ["/admin/logs"];
+    }
+    if (pathname.startsWith("/admin/coze-logs")) {
+      return ["/admin/coze-logs"];
     }
     if (pathname.startsWith("/admin/config")) {
       return ["/admin/config"];

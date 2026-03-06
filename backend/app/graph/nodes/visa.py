@@ -34,6 +34,7 @@ async def visa_kb_search_node(state: GraphState) -> dict[str, Any]:
 
     user_message = str(state.get("current_user_message") or "").strip()
     trace_id = str(state.get("trace_id") or "-")
+    session_id = str(state.get("session_id") or "")
     profile = _ensure_profile(state.get("user_profile"))
 
     country = _extract_destination_country(user_message, profile)
@@ -58,7 +59,7 @@ async def visa_kb_search_node(state: GraphState) -> dict[str, Any]:
 
     workflow_service = _resolve_workflow_service()
     try:
-        result = await workflow_service.run_visa_search(query=query, trace_id=trace_id)
+        result = await workflow_service.run_visa_search(query=query, trace_id=trace_id, session_id=session_id)
         answer = str(getattr(result, "answer", "") or "")
         sources = getattr(result, "sources", [])
         if not isinstance(sources, list):

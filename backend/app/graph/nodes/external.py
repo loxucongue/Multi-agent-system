@@ -50,6 +50,7 @@ async def external_api_node(state: GraphState) -> dict[str, Any]:
 
     user_message = str(state.get("current_user_message") or "").strip()
     trace_id = str(state.get("trace_id") or "-")
+    session_id = str(state.get("session_id") or "")
     profile = _ensure_profile(state.get("user_profile"))
 
     info_type = _infer_info_type(user_message)
@@ -61,6 +62,7 @@ async def external_api_node(state: GraphState) -> dict[str, Any]:
             info_type=info_type,
             params=params,
             trace_id=trace_id,
+            session_id=session_id,
         )
         return {
             "tool_results": {

@@ -35,7 +35,7 @@ class WorkflowService:
     #  Public methods
     # ─────────────────────────────────────────────
 
-    async def run_route_search(self, query: str, trace_id: str) -> RouteSearchResult:
+    async def run_route_search(self, query: str, trace_id: str, session_id: str = "") -> RouteSearchResult:
         """调用 WF_ROUTE_SEARCH 工作流，返回路线候选列表。
 
         Parameters 约定入参名为 ``"input"``（COZE.md 0.3 节）。
@@ -45,6 +45,7 @@ class WorkflowService:
             workflow_id=self._settings.COZE_WF_ROUTE_SEARCH_ID,
             parameters={"input": query},
             trace_id=trace_id,
+            session_id=session_id,
         )
 
         debug_url = payload.get("debug_url")
@@ -52,7 +53,7 @@ class WorkflowService:
 
         return RouteSearchResult(candidates=candidates, debug_url=debug_url)
 
-    async def run_visa_search(self, query: str, trace_id: str) -> VisaSearchResult:
+    async def run_visa_search(self, query: str, trace_id: str, session_id: str = "") -> VisaSearchResult:
         """调用 WF_VISA_SEARCH 工作流，返回签证搜索结果。
 
         Parameters 约定入参名为 ``"input"``（COZE.md 0.3 节）。
@@ -62,6 +63,7 @@ class WorkflowService:
             workflow_id=self._settings.COZE_WF_VISA_SEARCH_ID,
             parameters={"input": query},
             trace_id=trace_id,
+            session_id=session_id,
         )
 
         debug_url = payload.get("debug_url")
@@ -70,7 +72,7 @@ class WorkflowService:
         return VisaSearchResult(answer=answer, sources=sources, debug_url=debug_url)
 
     async def run_external_info(
-        self, info_type: str, params: dict, trace_id: str
+        self, info_type: str, params: dict, trace_id: str, session_id: str = ""
     ) -> ExternalInfoResult:
         """调用 WF_EXTERNAL_INFO 工作流，获取外部信息（天气/航班/交通）。
 
@@ -83,6 +85,7 @@ class WorkflowService:
             workflow_id=self._settings.COZE_WF_EXTERNAL_INFO_ID,
             parameters=parameters,
             trace_id=trace_id,
+            session_id=session_id,
         )
 
         debug_url = payload.get("debug_url")
@@ -99,6 +102,7 @@ class WorkflowService:
         workflow_id: str,
         parameters: dict[str, Any],
         trace_id: str,
+        session_id: str = "",
     ) -> dict[str, Any]:
         """Execute a Coze workflow and handle interrupt_data / logging."""
 
@@ -108,7 +112,17 @@ class WorkflowService:
             "connector_id": "1024",
         }
 
-        payload = await self._client._request("POST", self._WORKFLOW_ENDPOINT, body)
+        payload = await self._client._request(
+            "POST",
+            self._WORKFLOW_ENDPOINT,
+            body,
+            log_context={
+                "trace_id": trace_id,
+                "session_id": session_id,
+                "workflow_id": workflow_id,
+                "call_type": self._infer_call_type(workflow_id),
+            },
+        )
 
         # ── 记录 debug_url 和 usage ──
         debug_url = payload.get("debug_url", "-")
@@ -128,6 +142,27 @@ class WorkflowService:
                 f"workflow_interrupted workflow_id={workflow_id} trace_id={trace_id} "
                 f"event_id={event_id} type={interrupt_type}"
             )
+            try:
+                from app.services.container import services
+
+                await services.coze_log_service.log_call(
+                    trace_id=trace_id,
+                    session_id=session_id,
+                    call_type=self._infer_call_type(workflow_id),
+                    workflow_id=workflow_id,
+                    endpoint=self._WORKFLOW_ENDPOINT,
+                    request_params=parameters,
+                    response_code=int(payload.get("code", 0) or 0),
+                    response_data=payload,
+                    coze_logid=str(event_id),
+                    debug_url=str(payload.get("debug_url") or "") or None,
+                    token_count=int(usage.get("token_count", 0) or 0) if isinstance(usage, dict) else None,
+                    latency_ms=0,
+                    status="interrupted",
+                    error_message=f"interrupted event_id={event_id} type={interrupt_type}",
+                )
+            except Exception:
+                self._logger.warning("failed to write interrupted workflow log")
             raise CozeClientError(
                 f"workflow interrupted (event_id={event_id}, type={interrupt_type})",
                 code=-2,
@@ -135,6 +170,15 @@ class WorkflowService:
             )
 
         return payload
+
+    def _infer_call_type(self, workflow_id: str) -> str:
+        if workflow_id == self._settings.COZE_WF_ROUTE_SEARCH_ID:
+            return "route_search"
+        if workflow_id == self._settings.COZE_WF_VISA_SEARCH_ID:
+            return "visa_search"
+        if workflow_id == self._settings.COZE_WF_EXTERNAL_INFO_ID:
+            return "external_info"
+        return "workflow_run"
 
     # ─────────────────────────────────────────────
     #  Internal: response parsers

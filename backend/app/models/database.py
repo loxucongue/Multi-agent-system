@@ -176,3 +176,26 @@ class AuditLog(Base):
     coze_logid: Mapped[str | None] = mapped_column(String(100), nullable=True)
     coze_debug_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
+class CozeCallLog(Base):
+    """Coze API call logs with request/response details."""
+
+    __tablename__ = "coze_call_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    trace_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, default="", server_default="")
+    call_type: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    workflow_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    endpoint: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_params: Mapped[Any | None] = mapped_column(JSON, nullable=True)
+    response_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    response_data: Mapped[Any | None] = mapped_column(JSON, nullable=True)
+    coze_logid: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    debug_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="success", server_default="success")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), index=True)

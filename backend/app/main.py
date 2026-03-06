@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse, Response
 
 from app.api.admin.auth import router as admin_auth_router
+from app.api.admin.coze_logs import router as admin_coze_logs_router
 from app.api.admin.config import router as admin_config_router
 from app.api.admin.kb import router as admin_kb_router
 from app.api.admin.logs import router as admin_logs_router
@@ -49,6 +50,7 @@ app.include_router(admin_auth_router, prefix="/admin", tags=["admin-auth"])
 app.include_router(admin_prompts_router, prefix="/admin/prompts", tags=["admin-prompts"])
 app.include_router(admin_kb_router, prefix="/admin/kb", tags=["admin-kb"])
 app.include_router(admin_logs_router, prefix="/admin/logs", tags=["admin-logs"])
+app.include_router(admin_coze_logs_router, prefix="/admin/coze-logs", tags=["admin-coze-logs"])
 app.include_router(admin_config_router, prefix="/admin/config", tags=["admin-config"])
 
 cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]

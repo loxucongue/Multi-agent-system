@@ -90,6 +90,8 @@ class CozeClient:
             endpoint = "/api/permission/oauth2/token"
             last_request_error: Exception | None = None
             for attempt in range(2):
+                started_at = time.monotonic()
+                payload: dict[str, Any] | None = None
                 try:
                     response = await self._http_client.post(
                         endpoint,
@@ -113,6 +115,22 @@ class CozeClient:
                     )
 
                     if code != 0:
+                        await self._log_call(
+                            trace_id=get_trace_id(),
+                            session_id="",
+                            call_type="oauth_token",
+                            workflow_id=None,
+                            endpoint=endpoint,
+                            request_params=body,
+                            response_code=code,
+                            response_data=payload,
+                            coze_logid=str(logid),
+                            debug_url=None,
+                            token_count=None,
+                            latency_ms=int((time.monotonic() - started_at) * 1000),
+                            status="error",
+                            error_message=msg or "coze oauth token exchange failed",
+                        )
                         raise CozeClientError("coze oauth token exchange failed", code=code, logid=str(logid))
 
                     token_data = payload.get("data", payload)
@@ -125,12 +143,60 @@ class CozeClient:
 
                     expires_at = self._resolve_expires_at(token_data.get("expires_in"), now)
                     self._token_cache = {"token": access_token, "expires_at": expires_at}
+                    await self._log_call(
+                        trace_id=get_trace_id(),
+                        session_id="",
+                        call_type="oauth_token",
+                        workflow_id=None,
+                        endpoint=endpoint,
+                        request_params=body,
+                        response_code=code,
+                        response_data=payload,
+                        coze_logid=str(logid),
+                        debug_url=None,
+                        token_count=None,
+                        latency_ms=int((time.monotonic() - started_at) * 1000),
+                        status="success",
+                        error_message=None,
+                    )
                     return access_token
                 except httpx.RequestError as exc:
                     last_request_error = exc
+                    await self._log_call(
+                        trace_id=get_trace_id(),
+                        session_id="",
+                        call_type="oauth_token",
+                        workflow_id=None,
+                        endpoint=endpoint,
+                        request_params=body,
+                        response_code=None,
+                        response_data=None,
+                        coze_logid=None,
+                        debug_url=None,
+                        token_count=None,
+                        latency_ms=int((time.monotonic() - started_at) * 1000),
+                        status="error",
+                        error_message=str(exc),
+                    )
                     if attempt == 0:
                         continue
                 except ValueError as exc:
+                    await self._log_call(
+                        trace_id=get_trace_id(),
+                        session_id="",
+                        call_type="oauth_token",
+                        workflow_id=None,
+                        endpoint=endpoint,
+                        request_params=body,
+                        response_code=None,
+                        response_data=payload,
+                        coze_logid=None,
+                        debug_url=None,
+                        token_count=None,
+                        latency_ms=int((time.monotonic() - started_at) * 1000),
+                        status="error",
+                        error_message=str(exc),
+                    )
                     raise CozeClientError("failed to parse coze oauth response") from exc
 
             raise CozeClientError("coze oauth request failed after retry") from last_request_error
@@ -143,6 +209,7 @@ class CozeClient:
         *,
         extra_headers: dict[str, str] | None = None,
         params: dict[str, Any] | None = None,
+        log_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Send a Coze API request with OAuth token and unified response handling."""
 
@@ -158,6 +225,8 @@ class CozeClient:
             headers.update(extra_headers)
 
         for attempt in range(2):
+            started_at = time.monotonic()
+            payload: dict[str, Any] | None = None
             try:
                 response = await self._http_client.request(
                     method=method.upper(),
@@ -180,11 +249,62 @@ class CozeClient:
                 )
 
                 if code != 0:
+                    await self._log_call(
+                        trace_id=str((log_context or {}).get("trace_id") or get_trace_id()),
+                        session_id=str((log_context or {}).get("session_id") or ""),
+                        call_type=str((log_context or {}).get("call_type") or self._infer_call_type(endpoint, method)),
+                        workflow_id=str((log_context or {}).get("workflow_id") or (body or {}).get("workflow_id") or "")
+                        or None,
+                        endpoint=endpoint,
+                        request_params={"body": body, "params": params},
+                        response_code=code,
+                        response_data=payload,
+                        coze_logid=str(logid),
+                        debug_url=self._extract_debug_url(payload),
+                        token_count=self._extract_token_count(payload),
+                        latency_ms=int((time.monotonic() - started_at) * 1000),
+                        status="error",
+                        error_message=msg or "coze api request failed",
+                    )
                     raise CozeClientError("coze api request failed", code=code, logid=str(logid))
 
+                await self._log_call(
+                    trace_id=str((log_context or {}).get("trace_id") or get_trace_id()),
+                    session_id=str((log_context or {}).get("session_id") or ""),
+                    call_type=str((log_context or {}).get("call_type") or self._infer_call_type(endpoint, method)),
+                    workflow_id=str((log_context or {}).get("workflow_id") or (body or {}).get("workflow_id") or "")
+                    or None,
+                    endpoint=endpoint,
+                    request_params={"body": body, "params": params},
+                    response_code=code,
+                    response_data=payload,
+                    coze_logid=str(logid),
+                    debug_url=self._extract_debug_url(payload),
+                    token_count=self._extract_token_count(payload),
+                    latency_ms=int((time.monotonic() - started_at) * 1000),
+                    status="success",
+                    error_message=None,
+                )
                 return payload
             except httpx.RequestError as exc:
                 last_request_error = exc
+                await self._log_call(
+                    trace_id=str((log_context or {}).get("trace_id") or get_trace_id()),
+                    session_id=str((log_context or {}).get("session_id") or ""),
+                    call_type=str((log_context or {}).get("call_type") or self._infer_call_type(endpoint, method)),
+                    workflow_id=str((log_context or {}).get("workflow_id") or (body or {}).get("workflow_id") or "")
+                    or None,
+                    endpoint=endpoint,
+                    request_params={"body": body, "params": params},
+                    response_code=None,
+                    response_data=None,
+                    coze_logid=None,
+                    debug_url=None,
+                    token_count=None,
+                    latency_ms=int((time.monotonic() - started_at) * 1000),
+                    status="error",
+                    error_message=str(exc),
+                )
                 if attempt == 0:
                     continue
                 self._logger.error(
@@ -192,11 +312,45 @@ class CozeClient:
                 )
             except httpx.HTTPStatusError as exc:
                 status_code = exc.response.status_code
+                await self._log_call(
+                    trace_id=str((log_context or {}).get("trace_id") or get_trace_id()),
+                    session_id=str((log_context or {}).get("session_id") or ""),
+                    call_type=str((log_context or {}).get("call_type") or self._infer_call_type(endpoint, method)),
+                    workflow_id=str((log_context or {}).get("workflow_id") or (body or {}).get("workflow_id") or "")
+                    or None,
+                    endpoint=endpoint,
+                    request_params={"body": body, "params": params},
+                    response_code=status_code,
+                    response_data=None,
+                    coze_logid=None,
+                    debug_url=None,
+                    token_count=None,
+                    latency_ms=int((time.monotonic() - started_at) * 1000),
+                    status="error",
+                    error_message=str(exc),
+                )
                 self._logger.error(
                     f"coze_request endpoint={endpoint} trace_id={get_trace_id()} code={status_code} msg=http_status_error logid=-"
                 )
                 raise CozeClientError(f"coze http error status={status_code}") from exc
             except ValueError as exc:
+                await self._log_call(
+                    trace_id=str((log_context or {}).get("trace_id") or get_trace_id()),
+                    session_id=str((log_context or {}).get("session_id") or ""),
+                    call_type=str((log_context or {}).get("call_type") or self._infer_call_type(endpoint, method)),
+                    workflow_id=str((log_context or {}).get("workflow_id") or (body or {}).get("workflow_id") or "")
+                    or None,
+                    endpoint=endpoint,
+                    request_params={"body": body, "params": params},
+                    response_code=None,
+                    response_data=payload,
+                    coze_logid=None,
+                    debug_url=None,
+                    token_count=None,
+                    latency_ms=int((time.monotonic() - started_at) * 1000),
+                    status="error",
+                    error_message=str(exc),
+                )
                 self._logger.error(
                     f"coze_request endpoint={endpoint} trace_id={get_trace_id()} code=-1 msg=invalid_json logid=-"
                 )
@@ -239,3 +393,84 @@ class CozeClient:
         if parsed_value <= 0:
             return now + 900
         return now + parsed_value
+
+    async def _log_call(
+        self,
+        *,
+        trace_id: str,
+        session_id: str,
+        call_type: str,
+        workflow_id: str | None,
+        endpoint: str,
+        request_params: dict[str, Any] | None,
+        response_code: int | None,
+        response_data: dict[str, Any] | None,
+        coze_logid: str | None,
+        debug_url: str | None,
+        token_count: int | None,
+        latency_ms: int,
+        status: str,
+        error_message: str | None,
+    ) -> None:
+        try:
+            from app.services.container import services
+
+            coze_log_service = getattr(services, "_coze_log_service", None)
+            if coze_log_service is None:
+                return
+
+            await coze_log_service.log_call(
+                trace_id=trace_id,
+                session_id=session_id,
+                call_type=call_type,
+                workflow_id=workflow_id,
+                endpoint=endpoint,
+                request_params=request_params,
+                response_code=response_code,
+                response_data=response_data,
+                coze_logid=coze_logid,
+                debug_url=debug_url,
+                token_count=token_count,
+                latency_ms=latency_ms,
+                status=status,
+                error_message=error_message,
+            )
+        except Exception as exc:
+            self._logger.warning(f"failed to write coze call log: {exc}")
+
+    def _infer_call_type(self, endpoint: str, method: str) -> str:
+        if endpoint == "/api/permission/oauth2/token":
+            return "oauth_token"
+        if endpoint == "/v1/workflow/run":
+            return "workflow_run"
+        if endpoint == "/v1/datasets":
+            return "kb_list_datasets" if method.upper() == "GET" else "kb_create_dataset"
+        if endpoint.startswith("/v1/datasets/") and endpoint.endswith("/process"):
+            return "kb_document_progress"
+        if endpoint.startswith("/v1/datasets/"):
+            return "kb_update_dataset" if method.upper() == "PUT" else "kb_delete_dataset"
+        if endpoint == "/open_api/knowledge/document/create":
+            return "kb_create_doc"
+        if endpoint == "/open_api/knowledge/document/list":
+            return "kb_list_doc"
+        if endpoint == "/open_api/knowledge/document/update":
+            return "kb_update_doc"
+        if endpoint == "/open_api/knowledge/document/delete":
+            return "kb_delete_doc"
+        return "unknown"
+
+    def _extract_debug_url(self, payload: dict[str, Any]) -> str | None:
+        value = payload.get("debug_url")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return None
+
+    def _extract_token_count(self, payload: dict[str, Any]) -> int | None:
+        usage = payload.get("usage")
+        if not isinstance(usage, dict):
+            return None
+        raw = usage.get("token_count")
+        try:
+            return int(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            return None
