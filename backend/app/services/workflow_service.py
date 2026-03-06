@@ -286,6 +286,16 @@ class WorkflowService:
             if route_id_from_url:
                 return route_id_from_url
 
+        any_url_match = re.search(
+            r"(?:file_url_id|url|链接|地址)\s*[:：]?\s*(https?://[^\s\"']+)",
+            output_text,
+            flags=re.IGNORECASE,
+        )
+        if any_url_match:
+            route_id_from_url = self._extract_route_id_from_url(any_url_match.group(1))
+            if route_id_from_url:
+                return route_id_from_url
+
         numeric_route_id_match = re.search(
             r"(?:route_id|id)\s*[:：=]\s*(\d+)",
             output_text,

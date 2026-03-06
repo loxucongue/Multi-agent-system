@@ -17,6 +17,8 @@ async def route_db_detail_node(state: GraphState) -> dict[str, Any]:
     candidate_route_ids = _normalize_int_list(state.get("candidate_route_ids", []))
     active_route_id = _to_int_or_none(state.get("active_route_id"))
     trace_id = str(state.get("trace_id") or "-")
+    existing_tool_results = state.get("tool_results")
+    merged_tool_results = dict(existing_tool_results) if isinstance(existing_tool_results, dict) else {}
 
     route_service = _resolve_route_service()
     batch_rows = await route_service.get_routes_batch(candidate_route_ids) if candidate_route_ids else []
@@ -41,14 +43,18 @@ async def route_db_detail_node(state: GraphState) -> dict[str, Any]:
     route_prices = [{"route_id": item["id"], "pricing": item.get("pricing")} for item in ordered_details]
     route_schedules = [{"route_id": item["id"], "schedule": item.get("schedule")} for item in ordered_details]
 
-    return {
-        "candidate_route_ids": filtered_candidate_ids,
-        "active_route_id": active_route_id,
-        "tool_results": {
+    merged_tool_results.update(
+        {
             "route_details": ordered_details,
             "route_prices": route_prices,
             "route_schedules": route_schedules,
-        },
+        }
+    )
+
+    return {
+        "candidate_route_ids": filtered_candidate_ids,
+        "active_route_id": active_route_id,
+        "tool_results": merged_tool_results,
     }
 
 

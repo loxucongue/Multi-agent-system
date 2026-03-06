@@ -41,6 +41,12 @@ async def select_candidates_node(state: GraphState) -> dict[str, Any]:
             break
 
     active_route_id = selected_route_ids[0] if selected_route_ids else None
+    if not selected_route_ids and candidates:
+        return {
+            "active_route_id": None,
+            "candidate_route_ids": [],
+            "tool_results": {"candidates_raw": candidates},
+        }
     return {
         "active_route_id": active_route_id,
         "candidate_route_ids": selected_route_ids,
