@@ -19,7 +19,7 @@ const safeJsonParse = <T>(value: string): T | null => {
 };
 
 export function useSSE() {
-  const { appendToken, handleUIAction, setRouteCards, applyStatePatch, finishStream, setError } = useChatStore(
+  const { appendToken, handleUIAction, setRouteCards, applyStatePatch, finishStream, setError, addSystemMessage } = useChatStore(
     useShallow((state) => ({
       appendToken: state.appendToken,
       handleUIAction: state.handleUIAction,
@@ -27,6 +27,7 @@ export function useSSE() {
       applyStatePatch: state.applyStatePatch,
       finishStream: state.finishStream,
       setError: state.setError,
+      addSystemMessage: state.addSystemMessage,
     })),
   );
 
@@ -83,9 +84,27 @@ export function useSSE() {
           }
         });
 
+        eventSource.addEventListener("interim", (event) => {
+          const data = safeJsonParse<string | { message?: string }>((event as MessageEvent).data);
+          if (typeof data === "string" && data.trim()) {
+            addSystemMessage(data);
+            return;
+          }
+          if (data && typeof data === "object" && typeof data.message === "string" && data.message.trim()) {
+            addSystemMessage(data.message);
+          }
+        });
+
         eventSource.addEventListener("done", () => {
           reconnectCountRef.current = 0;
-          finishStream();
+          const state = useChatStore.getState();
+          const fallbackText =
+            state.currentStreamText.trim().length > 0
+              ? undefined
+              : state.routeCards.length > 0
+                ? "已为您整理出可参考的线路，您可以先查看右侧候选方案。"
+                : "本轮处理已完成，如未看到推荐结果，请重试或调整条件。";
+          finishStream(fallbackText);
           disconnect();
         });
 
@@ -121,7 +140,7 @@ export function useSSE() {
 
       openConnection(true);
     },
-    [appendToken, applyStatePatch, disconnect, finishStream, handleUIAction, setError, setRouteCards],
+    [addSystemMessage, appendToken, applyStatePatch, disconnect, finishStream, handleUIAction, setError, setRouteCards],
   );
 
   useEffect(() => {

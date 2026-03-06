@@ -100,16 +100,22 @@ async def coze_call_stats() -> dict[str, Any]:
 
 
 def _to_dict(log: CozeCallLog) -> dict[str, Any]:
+    request_params = log.request_params if isinstance(log.request_params, dict) else None
+    response_data = log.response_data if isinstance(log.response_data, dict) else None
+
     return {
         "id": log.id,
         "trace_id": log.trace_id,
         "session_id": log.session_id,
         "call_type": log.call_type,
+        "tool_type": _infer_tool_type(log),
         "workflow_id": log.workflow_id,
         "endpoint": log.endpoint,
-        "request_params": log.request_params,
+        "request_params": request_params,
+        "input_payload": _extract_input_payload(request_params),
         "response_code": log.response_code,
-        "response_data": log.response_data,
+        "response_data": response_data,
+        "output_payload": _extract_output_payload(response_data),
         "coze_logid": log.coze_logid,
         "debug_url": log.debug_url,
         "token_count": log.token_count,
@@ -118,3 +124,41 @@ def _to_dict(log: CozeCallLog) -> dict[str, Any]:
         "error_message": log.error_message,
         "created_at": log.created_at.isoformat() if isinstance(log.created_at, datetime) else str(log.created_at),
     }
+
+
+def _infer_tool_type(log: CozeCallLog) -> str:
+    if log.workflow_id:
+        return "workflow"
+    if "/bots/" in log.endpoint or log.call_type.startswith("bot_"):
+        return "agent"
+    return "api"
+
+
+def _extract_input_payload(request_params: dict[str, Any] | None) -> Any:
+    if not isinstance(request_params, dict):
+        return None
+
+    body = request_params.get("body")
+    params = request_params.get("params")
+
+    if isinstance(body, dict):
+        parameters = body.get("parameters")
+        if isinstance(parameters, dict):
+            return parameters
+        return body
+
+    if isinstance(params, dict):
+        return params
+
+    return request_params
+
+
+def _extract_output_payload(response_data: dict[str, Any] | None) -> Any:
+    if not isinstance(response_data, dict):
+        return None
+
+    if "data" in response_data:
+        return response_data.get("data")
+    if "output" in response_data:
+        return response_data.get("output")
+    return response_data

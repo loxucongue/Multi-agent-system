@@ -44,7 +44,7 @@ interface ChatStore {
   createSession: () => Promise<string>;
   sendMessage: (text: string) => Promise<string | null>;
   appendToken: (token: string) => void;
-  finishStream: () => void;
+  finishStream: (fallbackText?: string) => void;
   applyStatePatch: (patch: Record<string, unknown>) => void;
   setRouteCards: (cards: RouteCard[]) => void;
   handleUIAction: (action: UIAction) => void;
@@ -56,6 +56,7 @@ interface ChatStore {
   setError: (err: string | null) => void;
   reset: () => void;
   addAssistantMessage: (content: string, extras?: Partial<ChatMessage>) => void;
+  addSystemMessage: (content: string) => void;
 }
 
 interface StoreShape {
@@ -327,17 +328,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }));
   },
 
-  finishStream: () => {
+  finishStream: (fallbackText?: string) => {
     set((state) => {
       const streamText = state.currentStreamText;
-      const shouldAppendAssistant = streamText.trim().length > 0;
+      const normalizedFallback = (fallbackText ?? "").trim();
+      const shouldAppendAssistant = streamText.trim().length > 0 || normalizedFallback.length > 0;
+      const finalContent = streamText.trim().length > 0 ? streamText : normalizedFallback;
       const nextMessages = shouldAppendAssistant
         ? [
             ...state.messages,
             {
               id: createMessageId(),
               role: "assistant" as const,
-              content: streamText,
+              content: finalContent,
               timestamp: Date.now(),
             },
           ]
@@ -470,6 +473,25 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     set((state) => ({
       messages: [...state.messages, message],
+    }));
+  },
+
+  addSystemMessage: (content: string) => {
+    const normalized = content.trim();
+    if (!normalized) {
+      return;
+    }
+
+    set((state) => ({
+      messages: [
+        ...state.messages,
+        {
+          id: createMessageId(),
+          role: "system",
+          content: normalized,
+          timestamp: Date.now(),
+        },
+      ],
     }));
   },
 }));
