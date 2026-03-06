@@ -6,7 +6,6 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from app.config.settings import settings
 from app.graph.state import GraphState, STAGE_REMATCH_COLLECTING
 from app.models.schemas import UserProfile
 from app.prompts.intent_classification import build_intent_prompt
@@ -116,7 +115,7 @@ async def router_intent_node(state: GraphState) -> dict[str, Any]:
     """Classify intent and return GraphState patch for downstream nodes."""
 
     user_message = str(state.get("current_user_message") or "").strip()
-    history = _build_history(state.get("context_turns", []))
+    history = await _build_history(state.get("context_turns", []))
     current_profile = _ensure_user_profile(state.get("user_profile"))
     candidate_route_ids = _normalize_int_list(state.get("candidate_route_ids", []))
     active_route_id = _to_int_or_none(state.get("active_route_id"))
@@ -226,8 +225,13 @@ def _state_for_prompt(state: GraphState) -> dict[str, Any]:
     return payload
 
 
-def _build_history(context_turns: list[dict[str, str]]) -> list[dict[str, str]]:
-    limit = max(1, settings.SESSION_CONTEXT_TURNS)
+async def _build_history(context_turns: list[dict[str, str]]) -> list[dict[str, str]]:
+    limit = 5
+    try:
+        limit = await services.config_service.get_int("session_context_turns", 5)
+    except Exception:
+        limit = 5
+    limit = max(1, limit)
     turns = context_turns[-limit:]
     history: list[dict[str, str]] = []
     for turn in turns:

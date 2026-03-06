@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from redis import asyncio as aioredis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.config.settings import settings
 from app.models.database import Session
 from app.models.schemas import SessionState
 from app.utils.logger import get_logger
+
+if TYPE_CHECKING:
+    from app.services.config_service import ConfigService
 
 _SESSION_TTL_DAYS = 7
 _SESSION_TTL_SECONDS = _SESSION_TTL_DAYS * 24 * 60 * 60
@@ -26,11 +28,12 @@ class SessionService:
         self,
         session_factory: async_sessionmaker[AsyncSession],
         redis: aioredis.Redis | None = None,
+        config_service: ConfigService | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._redis = redis
+        self._config_service = config_service
         self._logger = get_logger(__name__)
-        self._context_turns_limit = max(1, settings.SESSION_CONTEXT_TURNS)
 
     async def create_session(self) -> str:
         """Create a new session in MySQL and cache in Redis."""
@@ -133,14 +136,17 @@ class SessionService:
         await self._set_cache(session_id, next_state)
 
     async def get_context_turns(self, session_id: str, n: int) -> list[dict[str, str]]:
-        """Get recent context turns; actual limit comes from settings."""
+        """Get recent context turns; limit comes from dynamic system config."""
 
         _ = n  # keep signature compatibility
         state = await self.get_session_state(session_id)
         if state is None:
             return []
-
-        return state.context_turns[-self._context_turns_limit :]
+        limit = 5
+        if self._config_service is not None:
+            limit = await self._config_service.get_int("session_context_turns", 5)
+        limit = max(1, limit)
+        return state.context_turns[-limit:]
 
     async def is_session_valid(self, session_id: str) -> bool:
         """Check whether session exists and is not expired."""

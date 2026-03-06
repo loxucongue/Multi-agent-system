@@ -13,6 +13,7 @@ from app.config.settings import settings
 from app.services.audit_service import AuditService
 from app.services.coze_client import CozeClient
 from app.services.coze_log_service import CozeLogService
+from app.services.config_service import ConfigService
 from app.services.kb_admin_service import KBAdminService
 from app.services.lead_service import LeadService
 from app.services.llm_client import LLMClient
@@ -52,6 +53,7 @@ class ServiceContainer:
         self._workflow_service: WorkflowService | None = None
         self._kb_admin_service: KBAdminService | None = None
         self._coze_log_service: CozeLogService | None = None
+        self._config_service: ConfigService | None = None
         self._route_service: RouteService | None = None
         self._session_service: SessionService | None = None
         self._lead_service: LeadService | None = None
@@ -90,8 +92,21 @@ class ServiceContainer:
                 self._kb_admin_service = None
 
             self._coze_log_service = CozeLogService(session_factory=self._session_factory)
+            self._config_service = ConfigService(session_factory=self._session_factory, redis=self._redis)
+            await self._config_service.ensure_defaults(
+                {
+                    "session_context_turns": (
+                        "5",
+                        "历史对话携带轮数，影响意图分类和回复生成的上下文窗口",
+                    )
+                }
+            )
             self._route_service = RouteService(session_factory=self._session_factory, redis=self._redis)
-            self._session_service = SessionService(session_factory=self._session_factory, redis=self._redis)
+            self._session_service = SessionService(
+                session_factory=self._session_factory,
+                redis=self._redis,
+                config_service=self._config_service,
+            )
             self._lead_service = LeadService(
                 session_factory=self._session_factory,
                 redis=self._redis,
@@ -138,6 +153,7 @@ class ServiceContainer:
         self._workflow_service = None
         self._kb_admin_service = None
         self._coze_log_service = None
+        self._config_service = None
         self._route_service = None
         self._session_service = None
         self._lead_service = None
@@ -176,6 +192,10 @@ class ServiceContainer:
     @property
     def coze_log_service(self) -> CozeLogService:
         return self._require_initialized("coze_log_service", self._coze_log_service)
+
+    @property
+    def config_service(self) -> ConfigService:
+        return self._require_initialized("config_service", self._config_service)
 
     @property
     def route_service(self) -> RouteService:

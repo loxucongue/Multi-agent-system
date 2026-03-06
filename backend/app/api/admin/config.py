@@ -7,8 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
-from sqlalchemy import delete, func, select
-from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy import select
 
 from app.models.database import SystemConfig
 from app.services.container import services
@@ -50,25 +49,7 @@ async def upsert_config(key: str, req: ConfigUpsertRequest) -> dict[str, str]:
     """Create or update one config item by key."""
 
     await services.initialize()
-    stmt = mysql_insert(SystemConfig).values(
-        key=key,
-        value=req.value,
-        description=req.description,
-    )
-    stmt = stmt.on_duplicate_key_update(
-        value=req.value,
-        description=req.description,
-        updated_at=func.now(),
-    )
-
-    async with services.session_factory() as session:
-        try:
-            await session.execute(stmt)
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-
+    await services.config_service.set_value(key=key, value=req.value, description=req.description)
     return {'key': key, 'value': req.value}
 
 
@@ -77,17 +58,8 @@ async def delete_config(key: str) -> Response:
     """Delete one config item by key."""
 
     await services.initialize()
-    async with services.session_factory() as session:
-        stmt = delete(SystemConfig).where(SystemConfig.key == key)
-        result = await session.execute(stmt)
-        if int(result.rowcount or 0) == 0:
-            await session.rollback()
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='config not found')
-
-        try:
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
+    deleted = await services.config_service.delete_key(key)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='config not found')
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
