@@ -86,12 +86,14 @@ async def routes_kb_search_node(state: GraphState) -> dict[str, Any]:
                 len(candidates),
             )
             if relevant:
+                candidates = await _resolve_candidate_route_ids(route_service, candidates, trace_id)
                 return {"tool_results": {"candidates": candidates}}
 
             previous_query = query
 
         hot_routes = await route_service.get_hot_routes()
         candidates = [_hot_route_to_candidate(route) for route in hot_routes]
+        candidates = await _resolve_candidate_route_ids(route_service, candidates, trace_id)
         return {"tool_results": {"candidates": candidates}}
     finally:
         if should_close:
@@ -308,6 +310,55 @@ def _hot_route_to_candidate(route_card: Any) -> dict[str, Any]:
         "output": str(payload.get("summary") or ""),
         "hot_route": payload,
     }
+
+
+async def _resolve_candidate_route_ids(
+    route_service: Any,
+    candidates: list[dict[str, Any]],
+    trace_id: str,
+) -> list[dict[str, Any]]:
+    """Map URL-like route_id values into DB integer route ids."""
+
+    url_route_ids: list[str] = []
+    for candidate in candidates:
+        route_id = candidate.get("route_id")
+        if isinstance(route_id, str) and route_id.startswith("http"):
+            url_route_ids.append(route_id)
+
+    if not url_route_ids:
+        return candidates
+
+    url_to_id = await route_service.resolve_route_ids_by_doc_urls(url_route_ids)
+    _LOGGER.info(
+        "route_id mapping trace_id=%s urls=%s mapped=%s",
+        trace_id,
+        len(url_route_ids),
+        len(url_to_id),
+    )
+
+    resolved: list[dict[str, Any]] = []
+    for candidate in candidates:
+        item = dict(candidate)
+        route_id = item.get("route_id")
+        if isinstance(route_id, str) and route_id.startswith("http"):
+            db_id = url_to_id.get(route_id)
+            if db_id is not None:
+                item["route_id"] = str(db_id)
+            else:
+                stripped = route_id.strip().rstrip("/")
+                db_id = url_to_id.get(stripped)
+                if db_id is not None:
+                    item["route_id"] = str(db_id)
+                else:
+                    _LOGGER.warning(
+                        "route_id url not found in routes table trace_id=%s url=%s",
+                        trace_id,
+                        route_id,
+                    )
+                    item["route_id"] = None
+        resolved.append(item)
+
+    return resolved
 
 
 def _to_int_str_or_none(value: Any) -> str | None:
