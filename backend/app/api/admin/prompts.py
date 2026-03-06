@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 
 from app.models.database import PromptVersion
+from app.services.prompt_defaults import DEFAULT_PROMPTS
+from app.services.prompt_service import ensure_prompt_seeds
 from app.services.container import services
 from app.utils.security import get_current_admin
 
@@ -36,6 +38,7 @@ async def list_active_prompts(_: str = Depends(get_current_admin)) -> list[Promp
     """List active prompt versions for all nodes."""
 
     await services.initialize()
+    await ensure_prompt_seeds()
     async with services.session_factory() as session:
         stmt = (
             select(PromptVersion)
@@ -57,11 +60,27 @@ async def list_active_prompts(_: str = Depends(get_current_admin)) -> list[Promp
     ]
 
 
+@router.get('/nodes', response_model=list[str])
+async def list_prompt_nodes(_: str = Depends(get_current_admin)) -> list[str]:
+    """List all prompt nodes (DB + default prompt keys)."""
+
+    await services.initialize()
+    await ensure_prompt_seeds()
+    async with services.session_factory() as session:
+        stmt = select(PromptVersion.node_name).distinct()
+        result = await session.execute(stmt)
+        db_names = {str(row[0]) for row in result.all() if row and row[0]}
+
+    all_names = set(DEFAULT_PROMPTS.keys()) | db_names
+    return sorted(all_names)
+
+
 @router.get('/{node_name}', response_model=list[PromptVersionResponse])
 async def list_prompt_versions(node_name: str, _: str = Depends(get_current_admin)) -> list[PromptVersionResponse]:
     """List all versions for one prompt node."""
 
     await services.initialize()
+    await ensure_prompt_seeds()
     async with services.session_factory() as session:
         stmt = (
             select(PromptVersion)
@@ -95,6 +114,7 @@ async def create_prompt_version(
     """Create a new inactive prompt version for a node."""
 
     await services.initialize()
+    await ensure_prompt_seeds()
     async with services.session_factory() as session:
         max_stmt = select(func.max(PromptVersion.version)).where(PromptVersion.node_name == node_name)
         max_result = await session.execute(max_stmt)
@@ -134,6 +154,7 @@ async def activate_prompt_version(
     """Activate one prompt version and deactivate others in the same node."""
 
     await services.initialize()
+    await ensure_prompt_seeds()
     async with services.session_factory() as session:
         target_stmt = select(PromptVersion).where(
             PromptVersion.node_name == node_name,

@@ -51,10 +51,17 @@ export default function AdminPromptsPage() {
   const loadNodes = async () => {
     setLoadingNodes(true);
     try {
-      const active = await authedFetch<PromptVersion[]>("/admin/prompts");
-      const names = Array.from(new Set(active.map((item) => item.node_name))).sort();
+      let names: string[] = [];
+      try {
+        names = await authedFetch<string[]>("/admin/prompts/nodes");
+      } catch {
+        const active = await authedFetch<PromptVersion[]>("/admin/prompts");
+        names = Array.from(new Set(active.map((item) => item.node_name))).sort();
+      }
       setNodeNames(names);
-      if (!selectedNode && names.length > 0) {
+      if (selectedNode && names.length > 0 && !names.includes(selectedNode)) {
+        setSelectedNode(names[0]);
+      } else if (!selectedNode && names.length > 0) {
         setSelectedNode(names[0]);
       }
     } catch (error) {

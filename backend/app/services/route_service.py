@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from redis import asyncio as aioredis
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -167,6 +167,59 @@ class RouteService:
             )
 
         return cards
+
+    async def resolve_route_ids_by_doc_urls(self, doc_urls: list[str]) -> dict[str, int]:
+        """Resolve route ids by doc_url list.
+
+        Matching is normalized with trim + lower to tolerate trailing spaces
+        and case differences in stored/received urls.
+        Returned mapping keeps the original input url string as key.
+        """
+
+        if not doc_urls:
+            return {}
+
+        normalized_to_originals: dict[str, list[str]] = {}
+        for raw in doc_urls:
+            if not isinstance(raw, str):
+                continue
+            normalized = raw.strip().lower()
+            if not normalized:
+                continue
+            normalized_to_originals.setdefault(normalized, []).append(raw)
+
+        if not normalized_to_originals:
+            return {}
+
+        normalized_values = list(normalized_to_originals.keys())
+        normalized_doc_url = func.lower(func.trim(Route.doc_url))
+
+        async with self._session_factory() as session:
+            stmt = (
+                select(Route.id, Route.doc_url, normalized_doc_url.label("normalized_doc_url"))
+                .where(normalized_doc_url.in_(normalized_values))
+            )
+            result = await session.execute(stmt)
+            rows = result.all()
+
+        normalized_to_route_id: dict[str, int] = {}
+        for row in rows:
+            normalized = str(row.normalized_doc_url or "").strip().lower()
+            if not normalized:
+                continue
+            # Keep first hit if duplicate normalized doc_url rows exist.
+            if normalized not in normalized_to_route_id:
+                normalized_to_route_id[normalized] = int(row.id)
+
+        resolved: dict[str, int] = {}
+        for normalized, originals in normalized_to_originals.items():
+            route_id = normalized_to_route_id.get(normalized)
+            if route_id is None:
+                continue
+            for original in originals:
+                resolved[original] = route_id
+
+        return resolved
 
     # ─────────────────────────────────────────────
     #  Redis cache helpers
