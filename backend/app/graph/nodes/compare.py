@@ -15,6 +15,8 @@ from app.models.schemas import (
 )
 from app.services.container import services
 from app.services.llm_client import LLMClient
+from app.services.prompt_defaults import DEFAULT_PROMPTS
+from app.services.prompt_service import get_active_prompt
 from app.utils.logger import get_logger
 
 _LOGGER = get_logger(__name__)
@@ -82,7 +84,6 @@ async def compare_node(state: GraphState) -> dict[str, Any]:
 
     compare_data = CompareData(routes=compare_items)
     payload = compare_data.model_dump(mode="json")
-
     return {
         "tool_results": {"compare_data": payload},
         "ui_actions": [{"action": "show_compare", "payload": payload}],
@@ -92,17 +93,14 @@ async def compare_node(state: GraphState) -> dict[str, Any]:
 def _resolve_route_ids(state: GraphState) -> list[int]:
     candidate_route_ids = _normalize_int_list(state.get("candidate_route_ids", []))
 
-    # explicit route_ids if provided by upstream
     explicit_route_ids = _normalize_int_list(state.get("route_ids"))
     if not explicit_route_ids:
         tool_results = state.get("tool_results")
         if isinstance(tool_results, dict):
             explicit_route_ids = _normalize_int_list(tool_results.get("route_ids"))
-
     if explicit_route_ids:
         return _dedupe_keep_order(explicit_route_ids)
 
-    # route_indices from extracted_entities => candidate_route_ids mapping
     extracted_entities = state.get("extracted_entities")
     route_indices: list[int] = []
     if isinstance(extracted_entities, dict):
@@ -149,7 +147,7 @@ async def _build_compare_item(row: Any, llm_client: LLMClient) -> CompareRouteIt
     pricing = getattr(row, "pricing", None)
     schedule = getattr(row, "schedule", None)
 
-    compare_item = CompareRouteItem(
+    return CompareRouteItem(
         route_id=int(getattr(row, "id")),
         name=str(getattr(row, "name", "") or ""),
         days=days,
@@ -169,7 +167,6 @@ async def _build_compare_item(row: Any, llm_client: LLMClient) -> CompareRouteIt
         ),
         suitable_for=_extract_suitable_for(tags),
     )
-    return compare_item
 
 
 def _derive_itinerary_style(tags: list[str], itinerary_json: Any) -> str | None:
@@ -200,11 +197,9 @@ def _avg_spots_per_day(itinerary_json: Any) -> float | None:
     for day in days:
         if not isinstance(day, dict):
             continue
-
         count = _count_spots_in_day(day)
         if count is not None:
             counts.append(count)
-
     if not counts:
         return None
     return sum(counts) / len(counts)
@@ -221,20 +216,15 @@ def _count_spots_in_day(day: dict[str, Any]) -> int | None:
         value = day.get(key)
         if isinstance(value, str):
             text_blocks.append(value)
-
     if not text_blocks:
         return None
-    # coarse heuristic by separators for point count
     merged = " ".join(text_blocks)
-    chunks = [part for part in re.split(r"[，,、；;。/]", merged) if part.strip()]
+    chunks = [part for part in re.split(r"[，、；;。]", merged) if part.strip()]
     return len(chunks) if chunks else None
 
 
 async def _infer_itinerary_style_with_llm(llm_client: LLMClient, summary: str, highlights: list[str]) -> str:
-    prompt = (
-        "请判断行程节奏，只能输出JSON。可选值：紧凑/轻松/自由时间充裕。"
-        "判断依据：摘要与亮点。"
-    )
+    prompt = (await get_active_prompt("compare_style")) or DEFAULT_PROMPTS["compare_style"]
     user_text = f"摘要：{summary}\n亮点：{'；'.join(highlights)}"
     try:
         result = await llm_client.chat_json(
@@ -249,7 +239,7 @@ async def _infer_itinerary_style_with_llm(llm_client: LLMClient, summary: str, h
         if style in {"紧凑", "轻松", "自由时间充裕"}:
             return style
     except Exception as exc:
-        _LOGGER.warning(f"compare itinerary style llm fallback failed: {exc}")
+        _LOGGER.warning("compare itinerary style llm fallback failed: %s", exc)
     return _DEFAULT_ITINERARY_STYLE
 
 
@@ -258,7 +248,6 @@ def _infer_days(itinerary_json: Any, base_info: str) -> int:
         days = itinerary_json.get("days")
         if isinstance(days, list) and days:
             return len(days)
-
     match = re.search(r"(\d+)\s*天", base_info)
     if match:
         return int(match.group(1))
@@ -268,7 +257,7 @@ def _infer_days(itinerary_json: Any, base_info: str) -> int:
 def _split_highlights(raw: str) -> list[str]:
     if not raw.strip():
         return []
-    parts = [part.strip() for part in re.split(r"[，,、；;\n。]", raw) if part.strip()]
+    parts = [part.strip() for part in re.split(r"[，、；;\n。]", raw) if part.strip()]
     return parts[:3]
 
 
@@ -297,9 +286,8 @@ def _extract_next_schedule_date(schedules_json: Any) -> str | None:
                 if isinstance(v, (dict, list)):
                     collect_dates(v)
                 elif isinstance(v, str):
-                    if k.lower() in {"date", "start_date", "departure_date"}:
-                        if _is_date_str(v):
-                            candidates.append(v[:10])
+                    if k.lower() in {"date", "start_date", "departure_date"} and _is_date_str(v):
+                        candidates.append(v[:10])
                     elif _is_date_str(v):
                         candidates.append(v[:10])
         elif isinstance(value, list):
@@ -360,3 +348,4 @@ def _as_text_list(value: Any) -> list[str]:
     if isinstance(value, str) and value.strip():
         return [value.strip()]
     return []
+

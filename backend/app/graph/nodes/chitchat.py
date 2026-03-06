@@ -18,10 +18,7 @@ async def chitchat_node(state: GraphState) -> dict[str, str]:
 
     user_message = str(state.get("current_user_message") or "").strip()
     llm_client, should_close = _resolve_llm_client()
-
-    system_prompt = (await get_active_prompt("chitchat")) or (
-        f"{DEFAULT_PROMPTS['chitchat']} 回答末尾必须自然包含这句话：{_GUIDE_SUFFIX}"
-    )
+    system_prompt = (await get_active_prompt("chitchat")) or DEFAULT_PROMPTS["chitchat"]
 
     response_text = ""
     try:
@@ -34,14 +31,13 @@ async def chitchat_node(state: GraphState) -> dict[str, str]:
             max_tokens=400,
         )
     except Exception as exc:
-        _LOGGER.warning(f"chitchat llm call failed, fallback used: {exc}")
-        response_text = f"抱歉，今天先照顾好自己最重要。{_GUIDE_SUFFIX}"
+        _LOGGER.warning("chitchat llm call failed, fallback used: %s", exc)
+        response_text = f"抱歉，先照顾好自己最重要。{_GUIDE_SUFFIX}"
     finally:
         if should_close:
             await llm_client.aclose()
 
-    response_text = _normalize_response(response_text)
-    return {"response_text": response_text}
+    return {"response_text": _normalize_response(response_text)}
 
 
 def _resolve_llm_client() -> tuple[LLMClient, bool]:

@@ -299,7 +299,7 @@ async def _evaluate_visa_result(
     sources: list[str],
 ) -> tuple[bool, str]:
     try:
-        messages = build_visa_result_eval_prompt(
+        messages = await build_visa_result_eval_prompt(
             user_message=user_message,
             country=country,
             query=query,

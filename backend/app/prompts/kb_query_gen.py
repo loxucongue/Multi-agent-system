@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.prompt_defaults import DEFAULT_PROMPTS
+from app.services.prompt_service import get_active_prompt
 
-def build_kb_query_gen_prompt(
+
+async def build_kb_query_gen_prompt(
     user_profile: dict[str, Any],
     user_message: str,
     history: list[dict[str, str]],
@@ -15,14 +18,7 @@ def build_kb_query_gen_prompt(
 ) -> list[dict[str, str]]:
     """Build messages for generating a precise route KB query."""
 
-    system_prompt = (
-        "你是旅游线路检索关键词专家。\n"
-        "任务：根据用户画像和对话历史，生成一条精准的中文知识库检索 query。\n"
-        "要求：\n"
-        "1. query 尽量短，但保留目的地、天数、预算、风格等关键信息。\n"
-        "2. 不要输出解释，不要输出 JSON，只输出一行纯文本 query。\n"
-        "3. 如果这是重试轮次，需要根据上一轮 query 和结果摘要换角度重写，不要简单重复。\n"
-    )
+    system_prompt = (await get_active_prompt("kb_query_gen")) or DEFAULT_PROMPTS["kb_query_gen"]
 
     history_text = "\n".join(
         f"用户：{item.get('user', '')}\n助手：{item.get('assistant', '')}" for item in history[-3:]
@@ -43,3 +39,4 @@ def build_kb_query_gen_prompt(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": "\n\n".join(user_parts)},
     ]
+

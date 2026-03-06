@@ -130,7 +130,7 @@ async def _generate_route_query(
     previous_result_summary: str | None,
 ) -> str | None:
     try:
-        messages = build_kb_query_gen_prompt(
+        messages = await build_kb_query_gen_prompt(
             user_profile=profile.model_dump(),
             user_message=user_message,
             history=history,
@@ -218,7 +218,7 @@ async def _evaluate_candidates_relevance(
     candidates: list[dict[str, Any]],
 ) -> tuple[bool, str]:
     try:
-        messages = build_kb_result_eval_prompt(
+        messages = await build_kb_result_eval_prompt(
             user_message=user_message,
             user_profile=profile.model_dump(),
             query=query,
