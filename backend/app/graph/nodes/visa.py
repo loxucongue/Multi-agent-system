@@ -17,34 +17,24 @@ _LOGGER = get_logger(__name__)
 
 _DEFAULT_NATIONALITY = "中国大陆"
 _DEST_STOPWORDS = {"办理", "咨询", "申请", "需要", "材料", "流程", "怎么办", "如何", "签证"}
-_DOMESTIC_CITIES = {
-    "北京",
-    "上海",
-    "广州",
-    "深圳",
-    "成都",
-    "重庆",
-    "杭州",
-    "南京",
-    "武汉",
-    "西安",
-    "长沙",
-    "青岛",
-    "大理",
-    "丽江",
-    "三亚",
-    "厦门",
-    "桂林",
-    "拉萨",
-    "哈尔滨",
-    "苏州",
-    "黄山",
-    "张家界",
-    "九寨沟",
-    "敦煌",
-    "香格里拉",
-}
 _MAX_ATTEMPTS = 3
+
+# 国内省份/地区/常见城市（用于签证目的地过滤）
+_DOMESTIC_REGIONS = {
+    "北京", "上海", "天津", "重庆",
+    "河北", "山西", "辽宁", "吉林", "黑龙江",
+    "江苏", "浙江", "安徽", "福建", "江西", "山东",
+    "河南", "湖北", "湖南", "广东", "海南",
+    "四川", "贵州", "云南", "陕西", "甘肃", "青海",
+    "台湾", "内蒙古", "广西", "西藏", "宁夏", "新疆",
+    "香港", "澳门",
+    "广州", "深圳", "成都", "杭州", "南京", "武汉", "西安", "长沙", "青岛",
+    "大理", "丽江", "三亚", "厦门", "桂林", "拉萨", "哈尔滨", "苏州", "黄山",
+    "张家界", "九寨沟", "敦煌", "香格里拉", "西双版纳", "珠海", "中山", "佛山", "东莞",
+    "昆明", "贵阳", "南宁", "福州", "泉州", "宁波", "温州", "无锡", "常州", "洛阳",
+    "开封", "郑州", "济南", "烟台", "大连", "长春", "沈阳", "呼和浩特", "乌鲁木齐",
+}
+
 _VISA_EVAL_SCHEMA: dict[str, Any] = {
     "name": "visa_result_eval",
     "schema": {
@@ -71,7 +61,7 @@ _NATIONALITY_KEYWORDS = {
 
 
 async def visa_kb_search_node(state: GraphState) -> dict[str, Any]:
-    """Run visa KB search with an agentic retry loop."""
+    """Run visa KB search with retry + relevance evaluation."""
 
     user_message = str(state.get("current_user_message") or "").strip()
     trace_id = str(state.get("trace_id") or "-")
@@ -85,7 +75,7 @@ async def visa_kb_search_node(state: GraphState) -> dict[str, Any]:
     depart_date = (profile.depart_date_range or "").strip() or None
 
     if not country:
-        ask_text = "请先告诉我您要办理哪个国家或地区的签证，我再帮您查询具体要求。"
+        ask_text = "您想了解哪个国家或地区的签证信息呢？请告诉我目的地国家，比如日本、泰国、新加坡等。"
         return {
             "response_text": ask_text,
             "tool_results": {
@@ -125,7 +115,13 @@ async def visa_kb_search_node(state: GraphState) -> dict[str, Any]:
             try:
                 result = await workflow_service.run_visa_search(query=query, trace_id=trace_id, session_id=session_id)
             except Exception as exc:
-                _LOGGER.warning("visa kb search failed trace_id=%s attempt=%s country=%s: %s", trace_id, attempt, country, exc)
+                _LOGGER.warning(
+                    "visa kb search failed trace_id=%s attempt=%s country=%s: %s",
+                    trace_id,
+                    attempt,
+                    country,
+                    exc,
+                )
                 previous_query = query
                 previous_result_summary = None
                 continue
@@ -201,30 +197,21 @@ def _extract_destination_country(user_message: str, profile: UserProfile) -> str
     match = re.search(r"([\u4e00-\u9fa5A-Za-z]{1,12})签证", user_message)
     if match:
         text = _clean_country_text(match.group(1))
-        if _is_overseas_destination_candidate(text):
+        if text and text not in _DOMESTIC_REGIONS:
             return text
 
     match = re.search(r"去([\u4e00-\u9fa5A-Za-z]{1,12})", user_message)
     if match:
         text = _clean_country_text(match.group(1))
-        if _is_overseas_destination_candidate(text):
+        if text and text not in _DOMESTIC_REGIONS:
             return text
 
     for destination in profile.destinations:
-        cleaned = _clean_country_text(str(destination))
-        if _is_overseas_destination_candidate(cleaned):
-            return cleaned
+        text = _clean_country_text(str(destination))
+        if text and text not in _DOMESTIC_REGIONS:
+            return text
 
     return None
-
-
-def _is_overseas_destination_candidate(value: str) -> bool:
-    text = str(value or "").strip()
-    if not text:
-        return False
-    if text in _DOMESTIC_CITIES:
-        return False
-    return True
 
 
 def _clean_country_text(value: str) -> str:
