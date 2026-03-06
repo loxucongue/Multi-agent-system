@@ -114,9 +114,10 @@ class ServiceContainer:
             )
             self._rate_limiter = RateLimiter(redis=self._redis)
             self._audit_service = AuditService(session_factory=self._session_factory)
-            await ensure_prompt_seeds()
 
+            # Mark initialized before seeding prompts so service properties are accessible.
             self._initialized = True
+            await ensure_prompt_seeds()
             self._logger.info("service container initialized")
         except Exception:
             await self.shutdown()
