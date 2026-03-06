@@ -236,13 +236,17 @@ class WorkflowService:
                 raw_route_id = self._extract_route_id(item, str(output_text))
                 route_id: str | None = None
                 if raw_route_id is not None:
+                    normalized_route_id = str(raw_route_id).strip()
                     try:
-                        route_id = str(int(str(raw_route_id).strip()))
+                        route_id = str(int(normalized_route_id))
                     except (TypeError, ValueError):
-                        self._logger.warning(
-                            "invalid route_id from workflow candidate, "
-                            f"trace_id={trace_id} document_id={doc_id} raw_route_id={raw_route_id}"
-                        )
+                        if normalized_route_id.lower().startswith(("http://", "https://")):
+                            route_id = normalized_route_id
+                        else:
+                            self._logger.warning(
+                                "invalid route_id from workflow candidate, "
+                                f"trace_id={trace_id} document_id={doc_id} raw_route_id={raw_route_id}"
+                            )
                 if route_id is None and raw_route_id is None:
                     self._logger.warning(
                         f"route_id not found in route candidate output, trace_id={trace_id} document_id={doc_id}"
@@ -276,35 +280,9 @@ class WorkflowService:
         if direct_route_id:
             return str(direct_route_id)
 
-        file_url_id = item.get("file_url_id") or item.get("fileUrlId")
-        if isinstance(file_url_id, str):
-            route_id_from_url = self._extract_route_id_from_url(file_url_id)
-            if route_id_from_url:
-                return route_id_from_url
-
         route_id_match = re.search(r"route_id\s*[:：]\s*([A-Za-z0-9_-]+)", output_text, flags=re.IGNORECASE)
         if route_id_match:
             return route_id_match.group(1)
-
-        file_url_match = re.search(
-            r"file_url_id\s*[:：]\s*(https?://[^\s\"']+\.(?:pdf|doc|docx))",
-            output_text,
-            flags=re.IGNORECASE,
-        )
-        if file_url_match:
-            route_id_from_url = self._extract_route_id_from_url(file_url_match.group(1))
-            if route_id_from_url:
-                return route_id_from_url
-
-        any_url_match = re.search(
-            r"(?:file_url_id|url|链接|地址)\s*[:：]?\s*(https?://[^\s\"']+)",
-            output_text,
-            flags=re.IGNORECASE,
-        )
-        if any_url_match:
-            route_id_from_url = self._extract_route_id_from_url(any_url_match.group(1))
-            if route_id_from_url:
-                return route_id_from_url
 
         numeric_route_id_match = re.search(
             r"(?:route_id|id)\s*[:：=]\s*(\d+)",
@@ -317,6 +295,16 @@ class WorkflowService:
         loose_numeric_id_match = re.search(r"\b(?:id|ID)\b\s*[:：=]?\s*(\d+)", output_text)
         if loose_numeric_id_match:
             return loose_numeric_id_match.group(1)
+
+        file_url_id = item.get("file_url_id") or item.get("fileUrlId")
+        if isinstance(file_url_id, str):
+            file_url_id = file_url_id.strip()
+            if file_url_id.lower().startswith(("http://", "https://")):
+                return file_url_id
+
+        file_url_match = re.search(r"file_url_id[：:]\s*(https?://[^\s\"']+)", output_text)
+        if file_url_match:
+            return file_url_match.group(1).strip()
 
         unique_numeric_tokens = re.findall(r"(?<!\d)(\d{3,})(?!\d)", output_text)
         unique_numeric_token_set = {token for token in unique_numeric_tokens if token}
