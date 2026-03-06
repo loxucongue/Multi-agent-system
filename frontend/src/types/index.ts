@@ -69,6 +69,13 @@ export interface ScheduleInfo {
   schedule_updated_at: string;
 }
 
+/** 路线完整详情（右侧详情面板） */
+export interface RouteFullDetail {
+  route: RouteDetail;
+  pricing: PricingInfo | null;
+  schedule: ScheduleInfo | null;
+}
+
 /** 对比线路单项 */
 export interface CompareRouteItem {
   route_id: number;

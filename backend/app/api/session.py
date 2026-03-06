@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.models.schemas import RouteCard, SessionCreateResponse, SessionDetailResponse
+from app.models.schemas import RouteCard, RouteFullDetail, SessionCreateResponse, SessionDetailResponse
 from app.services.container import services
 
 router = APIRouter()
@@ -71,4 +71,26 @@ async def get_session_detail(session_id: str) -> SessionDetailResponse:
         context_turns=state.context_turns,
         active_card=active_card,
         candidate_cards=candidate_cards,
+    )
+
+
+@router.get("/{session_id}/route/{route_id}", response_model=RouteFullDetail)
+async def get_route_full_detail(session_id: str, route_id: int) -> RouteFullDetail:
+    """Fetch full route detail + pricing + schedule for right detail panel."""
+
+    await services.initialize()
+
+    session_state = await services.session_service.get_session_state(session_id)
+    if session_state is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+
+    route = await services.route_service.get_route_detail(route_id)
+    if route is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="route not found")
+
+    price_schedule = await services.route_service.get_route_price_schedule(route_id)
+    return RouteFullDetail(
+        route=route,
+        pricing=price_schedule.pricing if price_schedule else None,
+        schedule=price_schedule.schedule if price_schedule else None,
     )

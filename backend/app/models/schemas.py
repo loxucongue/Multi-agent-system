@@ -328,6 +328,14 @@ class RoutePriceSchedule(BaseModel):
     schedule: ScheduleInfo | None = None
 
 
+class RouteFullDetail(BaseModel):
+    """Route detail payload for right-side detail panel API."""
+
+    route: RouteDetail
+    pricing: PricingInfo | None = None
+    schedule: ScheduleInfo | None = None
+
+
 class RouteBatchItem(BaseModel):
     """批量查询单条（静态信息+pricing+schedule）。"""
 

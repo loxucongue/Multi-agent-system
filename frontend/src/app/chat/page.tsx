@@ -12,6 +12,7 @@ import CompareDrawer from "@/components/compare/CompareDrawer";
 import LeadModal from "@/components/lead/LeadModal";
 import ActiveRouteCard, { type ActiveRouteCardData } from "@/components/route-card/ActiveRouteCard";
 import CandidateCards from "@/components/route-card/CandidateCards";
+import RouteDetailPanel from "@/components/route-card/RouteDetailPanel";
 import { useSSE } from "@/hooks/useSSE";
 import { API_BASE_URL, apiRequest } from "@/services/api";
 import { CURRENT_SESSION_KEY, useChatStore } from "@/stores/sessionStore";
@@ -27,7 +28,7 @@ const deriveDays = (summary: string): number => {
 
 const deriveHighlights = (summary: string): string[] => {
   const parts = summary
-    .split(/[，。；、,.!?\n]+/)
+    .split(/[，。；,;.!?\n]+/)
     .map((item) => item.trim())
     .filter((item) => item.length >= 4);
   if (parts.length === 0) {
@@ -45,6 +46,7 @@ export default function ChatPage() {
     activeRouteId,
     candidateRouteIds,
     routeCards,
+    routeDetailPanel,
     showLeadModal,
     showCompareDrawer,
     compareData,
@@ -54,6 +56,8 @@ export default function ChatPage() {
     createSession,
     hydrateSession,
     sendMessage,
+    openRouteDetail,
+    closeRouteDetail,
     setLeadModalVisible,
     setCompareDrawerVisible,
     setCompareData,
@@ -64,6 +68,7 @@ export default function ChatPage() {
       activeRouteId: state.activeRouteId,
       candidateRouteIds: state.candidateRouteIds,
       routeCards: state.routeCards,
+      routeDetailPanel: state.routeDetailPanel,
       showLeadModal: state.showLeadModal,
       showCompareDrawer: state.showCompareDrawer,
       compareData: state.compareData,
@@ -73,6 +78,8 @@ export default function ChatPage() {
       createSession: state.createSession,
       hydrateSession: state.hydrateSession,
       sendMessage: state.sendMessage,
+      openRouteDetail: state.openRouteDetail,
+      closeRouteDetail: state.closeRouteDetail,
       setLeadModalVisible: state.setLeadModalVisible,
       setCompareDrawerVisible: state.setCompareDrawerVisible,
       setCompareData: state.setCompareData,
@@ -101,11 +108,11 @@ export default function ChatPage() {
             if (response.status === 404 || response.status === 410) {
               window.localStorage.removeItem(CURRENT_SESSION_KEY);
             } else if (!cancelled) {
-              setError("恢复会话失败，已为您创建新会话");
+              setError("恢复会话失败，已为您创建新会话。");
             }
           } catch {
             if (!cancelled) {
-              setError("恢复会话失败，已为您创建新会话");
+              setError("恢复会话失败，已为您创建新会话。");
             }
           }
         }
@@ -167,6 +174,23 @@ export default function ChatPage() {
       }
     },
     [sessionId, setCompareData, setCompareDrawerVisible, setError],
+  );
+
+  const handleOpenRouteDetail = useCallback(
+    async (routeId: number, scrollToPrice = false) => {
+      if (!sessionId) {
+        setError("会话不存在，请刷新页面后重试");
+        return;
+      }
+      await openRouteDetail(sessionId, routeId);
+      if (scrollToPrice) {
+        window.setTimeout(() => {
+          const section = document.getElementById("route-detail-price");
+          section?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 60);
+      }
+    },
+    [openRouteDetail, sessionId, setError],
   );
 
   const activeRoute = useMemo(
@@ -238,34 +262,37 @@ export default function ChatPage() {
 
         <div className="w-[320px] border-l p-4 overflow-y-auto hidden lg:block">
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <ActiveRouteCard
-              activeRouteId={activeRouteId}
-              route={activeRouteCard}
-              onViewPriceSchedule={() => {
-                void handleSend("帮我查一下这条线路的价格和团期");
-              }}
-              onViewItinerary={(route) => {
-                const index = routeCards.findIndex((card) => card.id === route.id);
-                const prompt =
-                  index >= 0 ? `我想了解第${index + 1}条线路的详细行程` : "我想了解这条线路的详细行程";
-                void handleSend(prompt);
-              }}
-              onAddCompare={(route) => {
-                const ids = [route.id, ...candidateRouteIds.filter((id) => id !== route.id)].slice(0, 2);
-                if (ids.length < 2) {
-                  setError("至少需要两条线路进行对比");
-                  return;
-                }
-                void handleCompare(ids);
-              }}
-            />
+            {routeDetailPanel ? (
+              <RouteDetailPanel
+                data={routeDetailPanel.data}
+                loading={routeDetailPanel.loading}
+                onClose={closeRouteDetail}
+              />
+            ) : (
+              <ActiveRouteCard
+                activeRouteId={activeRouteId}
+                route={activeRouteCard}
+                onViewPriceSchedule={(route) => {
+                  void handleOpenRouteDetail(route.id, true);
+                }}
+                onViewItinerary={(route) => {
+                  void handleOpenRouteDetail(route.id);
+                }}
+                onAddCompare={(route) => {
+                  const ids = [route.id, ...candidateRouteIds.filter((id) => id !== route.id)].slice(0, 2);
+                  if (ids.length < 2) {
+                    setError("至少需要两条线路进行对比");
+                    return;
+                  }
+                  void handleCompare(ids);
+                }}
+              />
+            )}
 
             <CandidateCards
               cards={routeCards}
               onSelect={(routeId) => {
-                const index = routeCards.findIndex((card) => card.id === routeId);
-                const prompt = index >= 0 ? `我想了解第${index + 1}条线路的详情` : "我想了解这条线路的详情";
-                void handleSend(prompt);
+                void handleOpenRouteDetail(routeId);
               }}
               onCompare={(routeIds) => {
                 void handleCompare(routeIds);

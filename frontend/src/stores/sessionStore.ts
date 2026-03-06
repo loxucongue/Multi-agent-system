@@ -7,6 +7,7 @@ import type {
   ChatSendResponse,
   CompareData,
   RouteCard,
+  RouteFullDetail,
   SessionCreateResponse,
   SessionDetailResponse,
   SessionState,
@@ -37,6 +38,7 @@ interface ChatStore {
 
   routeCards: RouteCard[];
   compareData: CompareData | null;
+  routeDetailPanel: RouteDetailPanelState | null;
 
   showLeadModal: boolean;
   showCompareDrawer: boolean;
@@ -51,6 +53,8 @@ interface ChatStore {
   setLeadModalVisible: (visible: boolean) => void;
   setCompareDrawerVisible: (visible: boolean) => void;
   setCompareData: (data: CompareData | null) => void;
+  openRouteDetail: (sessionId: string, routeId: number) => Promise<void>;
+  closeRouteDetail: () => void;
   hydrateSession: (detail: SessionDetailResponse) => void;
   switchSession: (sessionId: string) => Promise<void>;
   setError: (err: string | null) => void;
@@ -71,8 +75,15 @@ interface StoreShape {
   error: string | null;
   routeCards: RouteCard[];
   compareData: CompareData | null;
+  routeDetailPanel: RouteDetailPanelState | null;
   showLeadModal: boolean;
   showCompareDrawer: boolean;
+}
+
+interface RouteDetailPanelState {
+  routeId: number;
+  data: RouteFullDetail | null;
+  loading: boolean;
 }
 
 const INITIAL_STATE: StoreShape = {
@@ -87,6 +98,7 @@ const INITIAL_STATE: StoreShape = {
   error: null,
   routeCards: [],
   compareData: null,
+  routeDetailPanel: null,
   showLeadModal: false,
   showCompareDrawer: false,
 };
@@ -251,6 +263,7 @@ const mapDetailToState = (detail: SessionDetailResponse): Partial<StoreShape> & 
   compareData: null,
   showCompareDrawer: false,
   showLeadModal: false,
+  routeDetailPanel: null,
 });
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -436,6 +449,41 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   setCompareData: (data: CompareData | null) => {
     set({ compareData: data });
+  },
+
+  openRouteDetail: async (sessionId: string, routeId: number) => {
+    set({
+      routeDetailPanel: {
+        routeId,
+        data: null,
+        loading: true,
+      },
+    });
+
+    try {
+      const detail = await apiRequest<RouteFullDetail>(`/session/${sessionId}/route/${routeId}`);
+      set({
+        routeDetailPanel: {
+          routeId,
+          data: detail,
+          loading: false,
+        },
+        error: null,
+      });
+    } catch (error) {
+      set({
+        routeDetailPanel: {
+          routeId,
+          data: null,
+          loading: false,
+        },
+        error: toErrorMessage(error),
+      });
+    }
+  },
+
+  closeRouteDetail: () => {
+    set({ routeDetailPanel: null });
   },
 
   hydrateSession: (detail: SessionDetailResponse) => {
