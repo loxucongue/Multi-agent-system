@@ -45,7 +45,10 @@ async def select_candidates_node(state: GraphState) -> dict[str, Any]:
         return {
             "active_route_id": None,
             "candidate_route_ids": [],
-            "tool_results": {"candidates_raw": candidates},
+            "tool_results": {
+                "candidates_without_id": candidates,
+                "parse_warning": "route_id解析失败，请检查知识库文档格式",
+            },
         }
     return {
         "active_route_id": active_route_id,

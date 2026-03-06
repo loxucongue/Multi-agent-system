@@ -50,7 +50,11 @@ def _should_reuse_existing_text(intent: str, tool_results: dict[str, Any]) -> bo
     """Whether response node should keep upstream response_text as final output."""
 
     if intent == "route_recommend":
-        if "route_details" in tool_results or "candidates" in tool_results or "candidates_raw" in tool_results:
+        if (
+            "route_details" in tool_results
+            or "candidates" in tool_results
+            or "candidates_without_id" in tool_results
+        ):
             return False
     return True
 
@@ -73,6 +77,7 @@ async def _generate_text(
     if intent == "route_recommend":
         route_details = tool_results.get("route_details")
         candidates = tool_results.get("candidates")
+        candidates_without_id = tool_results.get("candidates_without_id")
         has_results = (
             isinstance(route_details, list)
             and bool(route_details)
@@ -81,6 +86,8 @@ async def _generate_text(
             and bool(candidates)
         )
         if not has_results:
+            if isinstance(candidates_without_id, list) and candidates_without_id:
+                return "我找到了一些相关线路信息，但数据格式有误，正在修复中。请稍后重试，或换个关键词描述您的需求。"
             profile = state.get("user_profile")
             destinations: list[str] = []
             if hasattr(profile, "destinations") and isinstance(profile.destinations, list):

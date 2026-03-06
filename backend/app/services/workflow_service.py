@@ -226,6 +226,7 @@ class WorkflowService:
             return []
 
         candidates: list[RouteCandidate] = []
+        none_route_id_count = 0
         for item in items:
             if not isinstance(item, dict):
                 continue
@@ -246,6 +247,8 @@ class WorkflowService:
                     self._logger.warning(
                         f"route_id not found in route candidate output, trace_id={trace_id} document_id={doc_id}"
                     )
+                if route_id is None:
+                    none_route_id_count += 1
                 candidates.append(
                     RouteCandidate(
                         document_id=str(doc_id),
@@ -256,6 +259,13 @@ class WorkflowService:
 
         if not candidates:
             self._logger.warning("route search parsed 0 valid candidates")
+        else:
+            self._logger.info(
+                "route search parsed candidates trace_id=%s total=%s route_id_none=%s",
+                trace_id,
+                len(candidates),
+                none_route_id_count,
+            )
 
         return candidates
 
@@ -303,6 +313,15 @@ class WorkflowService:
         )
         if numeric_route_id_match:
             return numeric_route_id_match.group(1)
+
+        loose_numeric_id_match = re.search(r"\b(?:id|ID)\b\s*[:：=]?\s*(\d+)", output_text)
+        if loose_numeric_id_match:
+            return loose_numeric_id_match.group(1)
+
+        unique_numeric_tokens = re.findall(r"(?<!\d)(\d{3,})(?!\d)", output_text)
+        unique_numeric_token_set = {token for token in unique_numeric_tokens if token}
+        if len(unique_numeric_token_set) == 1:
+            return next(iter(unique_numeric_token_set))
 
         return None
 
