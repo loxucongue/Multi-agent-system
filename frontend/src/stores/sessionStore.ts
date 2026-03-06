@@ -119,6 +119,38 @@ const parseRouteIds = (value: unknown): number[] => {
   return value.filter((item): item is number => typeof item === "number");
 };
 
+const buildMessagesFromTurns = (
+  turns: Array<{ user: string; assistant: string }>,
+): ChatMessage[] => {
+  const messages: ChatMessage[] = [];
+  const baseTs = Date.now();
+
+  turns.forEach((turn, index) => {
+    const userText = (turn.user ?? "").trim();
+    const assistantText = (turn.assistant ?? "").trim();
+
+    if (userText) {
+      messages.push({
+        id: createMessageId(),
+        role: "user",
+        content: userText,
+        timestamp: baseTs + index * 2,
+      });
+    }
+
+    if (assistantText) {
+      messages.push({
+        id: createMessageId(),
+        role: "assistant",
+        content: assistantText,
+        timestamp: baseTs + index * 2 + 1,
+      });
+    }
+  });
+
+  return messages;
+};
+
 const readSessionHistory = (): SessionHistoryItem[] => {
   if (typeof window === "undefined") {
     return [];
@@ -211,7 +243,7 @@ const mapDetailToState = (detail: SessionDetailResponse): Partial<StoreShape> & 
   activeRouteId: detail.active_route_id,
   candidateRouteIds: detail.candidate_route_ids,
   routeCards: detail.candidate_cards,
-  messages: [],
+  messages: buildMessagesFromTurns(detail.context_turns ?? []),
   currentStreamText: "",
   isStreaming: false,
   error: null,

@@ -76,7 +76,7 @@ async def _generate_text(
         return _fallback_text_from_tool_results(intent, tool_results)
 
     serializable_state = _state_for_prompt(state)
-    messages = build_response_prompt(
+    messages = await build_response_prompt(
         intent=intent,
         tool_results=tool_results,
         user_message=user_message,

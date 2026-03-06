@@ -154,7 +154,7 @@ async def _generate_collect_questions(
 ) -> dict[str, Any]:
     llm_client, should_close = _resolve_llm_client()
     try:
-        messages = build_collect_prompt(
+        messages = await build_collect_prompt(
             user_message=user_message,
             user_profile=profile.model_dump(),
             missing_slots=missing_slots,

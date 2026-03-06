@@ -5,33 +5,36 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.services.prompt_service import get_active_prompt
 
-def build_collect_prompt(
+
+async def build_collect_prompt(
     user_message: str,
     user_profile: dict[str, Any],
     missing_slots: list[str],
 ) -> list[dict[str, str]]:
     """Build messages that guide the model to ask focused follow-up questions."""
 
-    system_prompt = (
-        "你是旅游需求收集助手。目标是在不打扰用户的前提下补齐槽位并生成追问。"
-        "必要槽位：destination；可选槽位：days/budget/depart_date/people/style_prefs。"
-        "已知信息不要重复问，问题口语化、简短、可直接回答；优先补destination。"
-        "请输出且仅输出JSON："
-        "{\"questions\":[\"问题1\",\"问题2\"],\"suggested_state_patch\":{\"user_profile\":{}},"
-        "\"slots_ready\":bool,\"reasoning\":\"...\"}。"
-        "questions数量1~3；若已无缺失可返回空数组并给slots_ready=true。"
-        "不得编造用户未提供的信息。"
+    default_system_prompt = (
+        "你是旅游需求收集助手。"
+        "必要槽位是 destination（在数据结构中对应 destinations 列表至少 1 项）。"
+        "可选槽位有 days_range、budget_range、depart_date_range、people、style_prefs、origin_city。"
+        "你需要输出 1~3 个追问问题，优先补齐必要槽位，避免重复询问已知信息。"
+        "只允许输出 JSON："
+        "{\"questions\":[\"...\"],\"suggested_state_patch\":{\"user_profile\":{}},\"slots_ready\":bool,\"reasoning\":\"...\"}。"
+        "若槽位已足够，可 questions 返回空数组且 slots_ready=true。"
     )
+    system_prompt = (await get_active_prompt("requirement_collection")) or default_system_prompt
 
     user_prompt = (
         f"用户最新消息:\n{user_message}\n\n"
         f"当前用户画像:\n{json.dumps(user_profile, ensure_ascii=False)}\n\n"
         f"缺失槽位:\n{json.dumps(missing_slots, ensure_ascii=False)}\n\n"
-        "请按要求输出JSON。"
+        "请按要求只输出 JSON。"
     )
 
     return [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
+

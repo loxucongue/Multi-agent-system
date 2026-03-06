@@ -68,6 +68,7 @@ async def get_session_detail(session_id: str) -> SessionDetailResponse:
         candidate_route_ids=candidate_ids,
         user_profile=state.user_profile,
         followup_count=state.followup_count,
+        context_turns=state.context_turns,
         active_card=active_card,
         candidate_cards=candidate_cards,
     )

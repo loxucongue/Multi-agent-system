@@ -92,7 +92,7 @@ async def router_intent_node(state: GraphState) -> dict[str, Any]:
 
     llm_client, should_close = _resolve_llm_client()
     try:
-        prompt_messages = build_intent_prompt(
+        prompt_messages = await build_intent_prompt(
             user_message=user_message,
             state=_state_for_prompt(state),
             history=history,

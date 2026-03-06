@@ -437,6 +437,7 @@ class SessionDetailResponse(BaseModel):
     candidate_route_ids: list[int] = Field(default_factory=list)
     user_profile: dict[str, Any] = Field(default_factory=dict)
     followup_count: int = 0
+    context_turns: list[dict[str, str]] = Field(default_factory=list)
     active_card: RouteCard | None = None
     candidate_cards: list[RouteCard] = Field(default_factory=list)
 

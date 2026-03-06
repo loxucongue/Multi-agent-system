@@ -121,6 +121,7 @@ export interface SessionDetailResponse {
   candidate_route_ids: number[];
   user_profile: UserProfile;
   followup_count: number;
+  context_turns: Array<{ user: string; assistant: string }>;
   active_card: RouteCard | null;
   candidate_cards: RouteCard[];
 }

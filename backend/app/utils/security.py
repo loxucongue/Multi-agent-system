@@ -36,8 +36,13 @@ def mask_phone(phone: str) -> str:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a plaintext password against bcrypt hash."""
-
-    return bcrypt.checkpw(plain_password.encode(), hashed_password.encode())
+    if not hashed_password:
+        return False
+    try:
+        return bcrypt.checkpw(plain_password.encode(), hashed_password.encode())
+    except ValueError:
+        # Invalid/legacy hash format should be treated as authentication failure.
+        return False
 
 
 def hash_password(password: str) -> str:

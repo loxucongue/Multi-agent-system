@@ -85,32 +85,31 @@ export default function ChatPage() {
 
     const initializeSession = async () => {
       setInitializing(true);
-      const savedSessionId = window.localStorage.getItem(CURRENT_SESSION_KEY);
-
-      if (savedSessionId) {
-        try {
-          const response = await fetch(`${API_BASE_URL}/session/${savedSessionId}`);
-          if (response.ok) {
-            const detail = (await response.json()) as SessionDetailResponse;
-            if (!cancelled) {
-              hydrateSession(detail);
+      try {
+        const savedSessionId = window.localStorage.getItem(CURRENT_SESSION_KEY);
+        if (savedSessionId) {
+          try {
+            const response = await fetch(`${API_BASE_URL}/session/${savedSessionId}`);
+            if (response.ok) {
+              const detail = (await response.json()) as SessionDetailResponse;
+              if (!cancelled) {
+                hydrateSession(detail);
+              }
+              return;
             }
-            return;
-          }
 
-          if (response.status === 404 || response.status === 410) {
-            window.localStorage.removeItem(CURRENT_SESSION_KEY);
-          } else if (!cancelled) {
-            setError("恢复会话失败，已为您创建新会话");
-          }
-        } catch {
-          if (!cancelled) {
-            setError("恢复会话失败，已为您创建新会话");
+            if (response.status === 404 || response.status === 410) {
+              window.localStorage.removeItem(CURRENT_SESSION_KEY);
+            } else if (!cancelled) {
+              setError("恢复会话失败，已为您创建新会话");
+            }
+          } catch {
+            if (!cancelled) {
+              setError("恢复会话失败，已为您创建新会话");
+            }
           }
         }
-      }
 
-      try {
         const newSessionId = await createSession();
         if (!cancelled) {
           window.localStorage.setItem(CURRENT_SESSION_KEY, newSessionId);
