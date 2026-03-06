@@ -221,6 +221,9 @@ async def run_graph_streaming(
                 if "response_text" in node_output and node_output["response_text"]:
                     await _push("token", {"text": node_output["response_text"], "node": node_name})
 
+                if node_name == NODE_COLLECT and node_output.get("slots_ready"):
+                    await _push("interim", "正在为您匹配线路，请稍等...")
+
                 if "ui_actions" in node_output:
                     for action in node_output.get("ui_actions") or []:
                         await _push("ui_action", action)
