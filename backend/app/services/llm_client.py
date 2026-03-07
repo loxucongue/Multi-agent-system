@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import AsyncIterator
@@ -16,6 +17,7 @@ _DEFAULT_BASE_URL = "https://api.deepseek.com/v1"
 _DEFAULT_MODEL = "deepseek-chat"
 _DEFAULT_TIMEOUT = 60.0
 _MAX_NETWORK_RETRIES = 1
+_MAX_CONCURRENT_REQUESTS = 5
 
 
 class LLMClientError(RuntimeError):
@@ -29,6 +31,7 @@ class LLMClient:
         self._api_key = settings.DEEPSEEK_API_KEY
         self._model = settings.DEEPSEEK_MODEL or _DEFAULT_MODEL
         self._logger = get_logger(__name__)
+        self._semaphore = asyncio.Semaphore(_MAX_CONCURRENT_REQUESTS)
 
         self._http_client = httpx.AsyncClient(
             base_url=_DEFAULT_BASE_URL,
@@ -69,7 +72,8 @@ class LLMClient:
         if response_format is not None:
             payload["response_format"] = response_format
 
-        result = await self._request_chat_completion(payload)
+        async with self._semaphore:
+            result = await self._request_chat_completion(payload)
         return self._extract_content(result)
 
     async def chat_json(
@@ -123,52 +127,53 @@ class LLMClient:
             "stream_options": {"include_usage": True},
         }
 
-        request_error: Exception | None = None
-        for attempt in range(_MAX_NETWORK_RETRIES + 1):
-            usage_logged = False
-            try:
-                async with self._http_client.stream("POST", "/chat/completions", json=payload) as response:
-                    response.raise_for_status()
-                    async for line in response.aiter_lines():
-                        if not line or not line.startswith("data:"):
-                            continue
+        async with self._semaphore:
+            request_error: Exception | None = None
+            for attempt in range(_MAX_NETWORK_RETRIES + 1):
+                usage_logged = False
+                try:
+                    async with self._http_client.stream("POST", "/chat/completions", json=payload) as response:
+                        response.raise_for_status()
+                        async for line in response.aiter_lines():
+                            if not line or not line.startswith("data:"):
+                                continue
 
-                        data_str = line[5:].strip()
-                        if not data_str or data_str == "[DONE]":
-                            continue
+                            data_str = line[5:].strip()
+                            if not data_str or data_str == "[DONE]":
+                                continue
 
-                        chunk = json.loads(data_str)
-                        if not isinstance(chunk, dict):
-                            continue
+                            chunk = json.loads(data_str)
+                            if not isinstance(chunk, dict):
+                                continue
 
-                        usage = chunk.get("usage")
-                        if isinstance(usage, dict) and not usage_logged:
-                            self._log_token_usage(usage)
-                            usage_logged = True
+                            usage = chunk.get("usage")
+                            if isinstance(usage, dict) and not usage_logged:
+                                self._log_token_usage(usage)
+                                usage_logged = True
 
-                        choices = chunk.get("choices")
-                        if not isinstance(choices, list) or not choices:
-                            continue
+                            choices = chunk.get("choices")
+                            if not isinstance(choices, list) or not choices:
+                                continue
 
-                        delta = choices[0].get("delta", {})
-                        if not isinstance(delta, dict):
-                            continue
+                            delta = choices[0].get("delta", {})
+                            if not isinstance(delta, dict):
+                                continue
 
-                        content = delta.get("content")
-                        if isinstance(content, str) and content:
-                            yield content
+                            content = delta.get("content")
+                            if isinstance(content, str) and content:
+                                yield content
 
-                return
-            except httpx.RequestError as exc:
-                request_error = exc
-                if attempt < _MAX_NETWORK_RETRIES:
-                    continue
-            except httpx.HTTPStatusError as exc:
-                raise LLMClientError(f"deepseek http error status={exc.response.status_code}") from exc
-            except json.JSONDecodeError as exc:
-                raise LLMClientError("failed to parse deepseek stream chunk json") from exc
+                    return
+                except httpx.RequestError as exc:
+                    request_error = exc
+                    if attempt < _MAX_NETWORK_RETRIES:
+                        continue
+                except httpx.HTTPStatusError as exc:
+                    raise LLMClientError(f"deepseek http error status={exc.response.status_code}") from exc
+                except json.JSONDecodeError as exc:
+                    raise LLMClientError("failed to parse deepseek stream chunk json") from exc
 
-        raise LLMClientError("deepseek stream request failed after retry") from request_error
+            raise LLMClientError("deepseek stream request failed after retry") from request_error
 
     async def aclose(self) -> None:
         """Close async HTTP resources."""

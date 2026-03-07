@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 _SESSION_TTL_DAYS = 7
 _SESSION_TTL_SECONDS = _SESSION_TTL_DAYS * 24 * 60 * 60
+_APPEND_DEDUP_LIST_KEYS = {"excluded_route_ids"}
 
 
 class SessionService:
@@ -210,6 +211,15 @@ class SessionService:
             current_value = merged.get(key)
             if isinstance(current_value, dict) and isinstance(value, dict):
                 merged[key] = self._deep_merge_dict(current_value, value)
+            elif key in _APPEND_DEDUP_LIST_KEYS and isinstance(current_value, list) and isinstance(value, list):
+                merged[key] = self._merge_list_append_dedup(current_value, value)
             else:
                 merged[key] = value
+        return merged
+
+    def _merge_list_append_dedup(self, left: list[Any], right: list[Any]) -> list[Any]:
+        merged: list[Any] = list(left)
+        for item in right:
+            if item not in merged:
+                merged.append(item)
         return merged

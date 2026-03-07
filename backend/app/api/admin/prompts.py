@@ -10,7 +10,7 @@ from sqlalchemy import func, select, update
 
 from app.models.database import PromptVersion
 from app.services.prompt_defaults import DEFAULT_PROMPTS
-from app.services.prompt_service import ensure_prompt_seeds
+from app.services.prompt_service import ensure_prompt_seeds, invalidate_prompt_cache
 from app.services.container import services
 from app.utils.security import get_current_admin
 
@@ -181,4 +181,5 @@ async def activate_prompt_version(
             await session.rollback()
             raise
 
+    await invalidate_prompt_cache(node_name)
     return {'message': 'activated'}

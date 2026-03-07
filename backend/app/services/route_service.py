@@ -105,8 +105,21 @@ class RouteService:
             result = await session.execute(stmt)
             routes = result.scalars().all()
 
+        route_map = {int(route.id): route for route in routes}
+        ordered_routes: list[Route] = []
+        seen: set[int] = set()
+        for rid in route_ids:
+            route = route_map.get(int(rid))
+            if route is None:
+                continue
+            # Keep stable order by input ids and avoid duplicate rows.
+            if route.id in seen:
+                continue
+            seen.add(int(route.id))
+            ordered_routes.append(route)
+
         items: list[RouteBatchItem] = []
-        for route in routes:
+        for route in ordered_routes:
             pricing_info = PricingInfo.model_validate(route.pricing) if route.pricing else None
             schedule_info = ScheduleInfo.model_validate(route.schedule) if route.schedule else None
 
