@@ -72,14 +72,15 @@ class WorkflowService:
         return VisaSearchResult(answer=answer, sources=sources, debug_url=debug_url)
 
     async def run_external_info(
-        self, info_type: str, params: dict, trace_id: str, session_id: str = ""
+        self,
+        query: str,
+        trace_id: str,
+        session_id: str = "",
+        info_type: str = "external_info",
     ) -> ExternalInfoResult:
-        """调用 WF_EXTERNAL_INFO 工作流，获取外部信息（天气/航班/交通）。
+        """调用 WF_EXTERNAL_INFO 工作流，参数按 COZE.md 约定使用 input 字符串。"""
 
-        info_type ∈ {"weather", "flight", "transport"}
-        """
-
-        parameters: dict[str, Any] = {"type": info_type, **params}
+        parameters: dict[str, Any] = {"input": query}
 
         payload = await self._run_workflow(
             workflow_id=self._settings.COZE_WF_EXTERNAL_INFO_ID,

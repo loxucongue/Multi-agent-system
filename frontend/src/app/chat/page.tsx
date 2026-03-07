@@ -269,7 +269,7 @@ export default function ChatPage() {
       return;
     }
 
-    const routeIds = dedupeRouteIds(compareData.routes.map((item) => item.route_id)).slice(0, 5);
+    const routeIds = dedupeRouteIds(compareData.routes.map((item) => item.route_id)).slice(0, 2);
     if (routeIds.length < 2) {
       setError("至少需要两条线路才能进行 AI 对比分析");
       return;

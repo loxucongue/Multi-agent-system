@@ -33,8 +33,8 @@ _TRANSPORT_KEYWORDS = (
 )
 
 _CITY_PAIR_PATTERNS = [
-    re.compile(r"从([\u4e00-\u9fa5A-Za-z]{1,12})到([\u4e00-\u9fa5A-Za-z]{1,12})"),
-    re.compile(r"([\u4e00-\u9fa5A-Za-z]{1,12})到([\u4e00-\u9fa5A-Za-z]{1,12})"),
+    re.compile(r"从\s*([\u4e00-\u9fa5A-Za-z]{1,12})\s*到\s*([\u4e00-\u9fa5A-Za-z]{1,12})"),
+    re.compile(r"([\u4e00-\u9fa5A-Za-z]{1,12})\s*到\s*([\u4e00-\u9fa5A-Za-z]{1,12})"),
 ]
 
 _WEATHER_CITY_PATTERN = re.compile(
@@ -46,7 +46,7 @@ _DATE_PATTERN = re.compile(
 
 
 async def external_api_node(state: GraphState) -> dict[str, Any]:
-    """Extract external-info intent params and call external workflow."""
+    """Extract external-info params and call external workflow via input string."""
 
     user_message = str(state.get("current_user_message") or "").strip()
     trace_id = str(state.get("trace_id") or "-")
@@ -55,30 +55,33 @@ async def external_api_node(state: GraphState) -> dict[str, Any]:
 
     info_type = _infer_info_type(user_message)
     params = _extract_params(user_message, profile, info_type)
+    query = _build_external_query(info_type=info_type, params=params, user_message=user_message)
 
     workflow_service = _resolve_workflow_service()
     try:
         result = await workflow_service.run_external_info(
-            info_type=info_type,
-            params=params,
+            query=query,
             trace_id=trace_id,
             session_id=session_id,
+            info_type=info_type,
         )
         return {
             "tool_results": {
                 "info_type": getattr(result, "info_type", info_type),
                 "params": params,
+                "query": query,
                 "output": str(getattr(result, "output", "") or ""),
                 "debug_url": getattr(result, "debug_url", None),
             }
         }
     except Exception as exc:
-        _LOGGER.warning(f"external info call failed trace_id={trace_id} info_type={info_type}: {exc}")
+        _LOGGER.warning("external info call failed trace_id=%s info_type=%s query=%r error=%s", trace_id, info_type, query, exc)
         return {
             "tool_results": {
                 "info_type": info_type,
                 "params": params,
-                "output": "暂时无法获取该信息",
+                "query": query,
+                "output": "暂时无法获取该信息，请稍后再试。",
             }
         }
 
@@ -101,7 +104,7 @@ def _ensure_profile(value: Any) -> UserProfile:
 def _infer_info_type(message: str) -> str:
     if _contains_any(message, _WEATHER_KEYWORDS):
         return "weather"
-    # transport first for "从A到B多远/怎么去/多久"
+    # transport first for "从A到B多久/怎么去/多远"
     if _contains_any(message, _TRANSPORT_KEYWORDS) or any(p.search(message) for p in _CITY_PAIR_PATTERNS):
         return "transport"
     if _contains_any(message, _FLIGHT_KEYWORDS):
@@ -118,7 +121,6 @@ def _extract_params(message: str, profile: UserProfile, info_type: str) -> dict[
         if not origin_city and profile.origin_city:
             origin_city = profile.origin_city
         if not dest_city:
-            # fallback: first destination in profile
             dest_city = profile.destinations[0] if profile.destinations else None
         return {
             "origin_city": origin_city,
@@ -126,7 +128,6 @@ def _extract_params(message: str, profile: UserProfile, info_type: str) -> dict[
             "date": date_value,
         }
 
-    # weather
     if not city:
         if dest_city:
             city = dest_city
@@ -135,6 +136,44 @@ def _extract_params(message: str, profile: UserProfile, info_type: str) -> dict[
         elif profile.origin_city:
             city = profile.origin_city
     return {"city": city, "date": date_value}
+
+
+def _build_external_query(info_type: str, params: dict[str, Any], user_message: str) -> str:
+    """Build workflow input string according to Coze external workflow convention."""
+
+    date_value = str(params.get("date") or "").strip()
+
+    if info_type == "weather":
+        city = str(params.get("city") or "").strip()
+        parts = [city, date_value, "天气"]
+        query = " ".join([part for part in parts if part])
+        return query or user_message
+
+    if info_type == "flight":
+        origin = str(params.get("origin_city") or "").strip()
+        dest = str(params.get("dest_city") or "").strip()
+        if origin and dest:
+            parts = [f"{origin}到{dest}", date_value, "航班"]
+            query = " ".join([part for part in parts if part])
+            return query or user_message
+        if dest:
+            parts = [dest, date_value, "航班"]
+            query = " ".join([part for part in parts if part])
+            return query or user_message
+
+    if info_type == "transport":
+        origin = str(params.get("origin_city") or "").strip()
+        dest = str(params.get("dest_city") or "").strip()
+        if origin and dest:
+            parts = [f"{origin}到{dest}", date_value, "交通"]
+            query = " ".join([part for part in parts if part])
+            return query or user_message
+        if dest:
+            parts = [dest, date_value, "交通"]
+            query = " ".join([part for part in parts if part])
+            return query or user_message
+
+    return user_message
 
 
 def _extract_city_pair(message: str) -> tuple[str | None, str | None]:
@@ -155,7 +194,6 @@ def _extract_city_for_weather(message: str) -> str | None:
         city = _clean_city(match.group(1))
         if city:
             return city
-    # fallback: first city-like token before date/weather words
     token_match = re.search(r"([\u4e00-\u9fa5A-Za-z]{2,12})(?:今天|明天|后天|天气)", message)
     if token_match:
         city = _clean_city(token_match.group(1))

@@ -70,17 +70,34 @@ async def compare_routes_ai_analysis(
     session_id: str,
     req: CompareRequest | None = Body(default=None),
 ) -> CompareAIAnalysisResponse:
-    """Generate AI analysis based on selected route comparison data."""
+    """Generate AI analysis using two full route contents."""
 
     await services.initialize()
 
     if not await services.session_service.is_session_valid(session_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
 
-    compare_data = await compare_routes(session_id=session_id, req=req)
-    prompt = _build_ai_compare_prompt(compare_data.routes)
+    route_ids = _normalize_route_ids(req.route_ids if req else None)
+    if not route_ids:
+        state = await services.session_service.get_session_state(session_id)
+        if state is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+        route_ids = _normalize_route_ids(state.candidate_route_ids)
 
-    fallback_text = _build_ai_compare_fallback(compare_data.routes)
+    if len(route_ids) < 2:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="至少需要2条线路进行 AI 对比分析")
+
+    selected_two = route_ids[:2]
+    batch_items = await _get_batch_items(selected_two)
+    item_by_id = {item.id: item for item in batch_items}
+    ordered_items = [item_by_id.get(route_id) for route_id in selected_two]
+    route_items = [item for item in ordered_items if item is not None]
+
+    if len(route_items) < 2:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="仅找到1条有效线路，无法进行 AI 对比分析")
+
+    prompt = _build_ai_compare_route_prompt(route_items[0], route_items[1])
+    fallback_text = _build_ai_compare_route_fallback(route_items[0], route_items[1])
 
     try:
         llm_client = services.llm_client
@@ -93,8 +110,10 @@ async def compare_routes_ai_analysis(
                 {
                     "role": "system",
                     "content": (
-                        "你是资深旅游顾问。请基于结构化对比数据给出中文分析："
-                        "1) 核心差异；2) 各路线适合人群；3) 明确推荐建议。"
+                        "你是资深旅游顾问。请仅基于给定的两条路线内容做对比分析，输出中文结论："
+                        "1) 核心差异（行程节奏/亮点/费用风险）；"
+                        "2) 各自优缺点；"
+                        "3) 分人群推荐建议（亲子/老人/首次出境/预算敏感）。"
                         "不要编造不存在的数据。"
                     ),
                 },
@@ -200,6 +219,78 @@ def _build_ai_compare_fallback(routes: list[CompareRouteItem]) -> str:
         "建议优先看三点：预算区间、行程风格、最近团期；"
         "若您告诉我偏好（预算/节奏/人群），我可以给出更明确推荐。"
     )
+
+
+def _build_ai_compare_route_prompt(route_a: RouteBatchItem, route_b: RouteBatchItem) -> str:
+    return "\n\n".join(
+        [
+            "请对比以下两条路线：",
+            _serialize_route_for_ai(route_a, "路线A"),
+            _serialize_route_for_ai(route_b, "路线B"),
+            "请按以下结构输出：",
+            "一、核心差异",
+            "二、优缺点对比",
+            "三、适合人群建议",
+            "四、若用户预算有限该选哪条",
+        ]
+    )
+
+
+def _build_ai_compare_route_fallback(route_a: RouteBatchItem, route_b: RouteBatchItem) -> str:
+    price_a = _format_price_range(route_a)
+    price_b = _format_price_range(route_b)
+    return (
+        f"已对比两条路线：{route_a.name} 与 {route_b.name}。\n"
+        f"- {route_a.name} 价格区间：{price_a}\n"
+        f"- {route_b.name} 价格区间：{price_b}\n"
+        "建议优先比较：行程节奏、费用包含范围、注意事项风险，再结合您的预算和出行人群选择。"
+    )
+
+
+def _serialize_route_for_ai(item: RouteBatchItem, title: str) -> str:
+    tags = "、".join(_to_text_list(item.tags)) or "暂无"
+    highlights = str(item.highlights or "").strip() or "暂无"
+    summary = str(item.summary or "").strip() or "暂无"
+    base_info = str(item.base_info or "").strip() or "暂无"
+    included = _truncate_text(item.included, 300) or "暂无"
+    notice = _truncate_text(item.notice, 300) or "暂无"
+    itinerary = _truncate_text(_stringify_json_like(item.itinerary_json), 500) or "暂无"
+    schedule = _truncate_text(_stringify_json_like(item.schedule.schedules_json if item.schedule else None), 300) or "暂无"
+    return (
+        f"{title}\n"
+        f"- 名称: {item.name}\n"
+        f"- 标签: {tags}\n"
+        f"- 摘要: {summary}\n"
+        f"- 亮点: {highlights}\n"
+        f"- 基础信息: {base_info}\n"
+        f"- 行程: {itinerary}\n"
+        f"- 费用包含: {included}\n"
+        f"- 注意事项: {notice}\n"
+        f"- 价格区间: {_format_price_range(item)}\n"
+        f"- 团期信息: {schedule}"
+    )
+
+
+def _format_price_range(item: RouteBatchItem) -> str:
+    pricing = item.pricing
+    if pricing is None:
+        return "暂无"
+    return f"{pricing.price_min}~{pricing.price_max} {pricing.currency}"
+
+
+def _stringify_json_like(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (str, int, float, bool)):
+        return str(value)
+    if isinstance(value, list):
+        return "；".join(_stringify_json_like(v) for v in value)
+    if isinstance(value, dict):
+        parts: list[str] = []
+        for key, nested in value.items():
+            parts.append(f"{key}:{_stringify_json_like(nested)}")
+        return "；".join(parts)
+    return str(value)
 
 
 def _to_text_list(value: Any) -> list[str]:
