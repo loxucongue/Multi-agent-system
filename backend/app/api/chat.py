@@ -23,6 +23,7 @@ _LOGGER = get_logger(__name__)
 
 _STREAM_TIMEOUT_SECONDS = 90
 _BLPOP_TIMEOUT_SECONDS = 5
+_MAX_EVENTS_PER_RUN = 1000
 
 
 @router.post("/send", response_model=ChatSendResponse)
@@ -59,16 +60,20 @@ async def send_chat(req: ChatSendRequest) -> ChatSendResponse:
             return ChatSendResponse(run_id=run_id, trace_id=trace_id)
 
         await redis.set(f"done:{run_id}", "0", ex=300)
-        asyncio.create_task(
-            _background_run(
-                session_id=req.session_id,
-                message=req.message,
-                run_id=run_id,
-                trace_id=trace_id,
-                redis=redis,
-            )
-        )
         handoff_lock = True
+        try:
+            asyncio.create_task(
+                _background_run(
+                    session_id=req.session_id,
+                    message=req.message,
+                    run_id=run_id,
+                    trace_id=trace_id,
+                    redis=redis,
+                )
+            )
+        except Exception:
+            handoff_lock = False
+            raise
         return ChatSendResponse(run_id=run_id, trace_id=trace_id)
     finally:
         if not handoff_lock:
@@ -135,6 +140,7 @@ async def _background_run(
             )
             try:
                 await redis.rpush(f"events:{run_id}", error_payload)
+                await redis.ltrim(f"events:{run_id}", -_MAX_EVENTS_PER_RUN, -1)
                 await redis.expire(f"events:{run_id}", 300)
             except Exception:
                 _LOGGER.exception("failed to write background error event run_id=%s", run_id)

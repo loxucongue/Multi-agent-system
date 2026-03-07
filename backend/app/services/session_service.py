@@ -57,7 +57,7 @@ class SessionService:
                 await session.rollback()
                 raise
 
-        await self._set_cache(session_id, state)
+        await self._set_cache_safe(session_id, state)
         return session_id
 
     async def get_session_state(self, session_id: str) -> SessionState | None:
@@ -78,7 +78,7 @@ class SessionService:
 
             state = self._row_to_state(row)
 
-        await self._set_cache(session_id, state)
+        await self._set_cache_safe(session_id, state)
         return state
 
     async def update_session_state(self, session_id: str, state_patch: dict[str, Any]) -> SessionState:
@@ -104,7 +104,7 @@ class SessionService:
                 await session.rollback()
                 raise
 
-        await self._set_cache(session_id, next_state)
+        await self._set_cache_safe(session_id, next_state)
         return next_state
 
     async def append_turn(self, session_id: str, user_msg: str, assistant_msg: str) -> None:
@@ -134,7 +134,7 @@ class SessionService:
                 await session.rollback()
                 raise
 
-        await self._set_cache(session_id, next_state)
+        await self._set_cache_safe(session_id, next_state)
 
     async def get_context_turns(self, session_id: str, n: int) -> list[dict[str, str]]:
         """Get recent context turns; limit comes from dynamic system config."""
@@ -191,6 +191,14 @@ class SessionService:
             await self._redis.delete(self._cache_key(session_id))
         except Exception:
             self._logger.debug(f"redis delete failed for {self._cache_key(session_id)}")
+
+    async def _set_cache_safe(self, session_id: str, state: SessionState) -> None:
+        """Best-effort cache refresh; never impact DB commit success path."""
+
+        try:
+            await self._set_cache(session_id, state)
+        except Exception:
+            self._logger.debug(f"redis set_cache_safe failed for {self._cache_key(session_id)}")
 
     async def _get_session_row(self, session: AsyncSession, session_id: str) -> Session | None:
         stmt = select(Session).where(Session.id == session_id)

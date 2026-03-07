@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
@@ -45,6 +46,7 @@ NODE_CHITCHAT = "chitchat"
 NODE_RESPONSE = "response"
 NODE_LEAD_CHECK = "lead_check"
 NODE_STATE_UPDATE = "state_update"
+_MAX_EVENTS_PER_RUN = 1000
 
 
 def check_slots_ready(state: GraphState) -> str:
@@ -193,6 +195,7 @@ async def run_graph_streaming(
     async def _push(event_type: str, data: Any) -> None:
         payload = json.dumps({"event": event_type, "data": data}, ensure_ascii=False, default=str)
         await redis_client.rpush(events_key, payload)
+        await redis_client.ltrim(events_key, -_MAX_EVENTS_PER_RUN, -1)
         await redis_client.expire(events_key, 300)
 
     try:
@@ -218,10 +221,25 @@ async def run_graph_streaming(
         initial_state["token_emitter"] = _emit_token
 
         final_state: dict[str, Any] = dict(initial_state)
+        node_timings: list[dict[str, Any]] = []
+        run_started_at = time.monotonic()
+        last_node_end = run_started_at
         async for event in graph.astream(initial_state, stream_mode="updates"):
             for node_name, node_output in event.items():
                 if not isinstance(node_output, dict):
                     continue
+
+                node_end = time.monotonic()
+                node_start = last_node_end
+                last_node_end = node_end
+                node_timings.append(
+                    {
+                        "node": node_name,
+                        "start_ms": int((node_start - run_started_at) * 1000),
+                        "end_ms": int((node_end - run_started_at) * 1000),
+                        "duration_ms": int((node_end - node_start) * 1000),
+                    }
+                )
 
                 final_state.update(node_output)
 
@@ -257,9 +275,50 @@ async def run_graph_streaming(
 
         await _push("done", {"trace_id": trace_id, "run_id": run_id})
         await redis_client.set(done_key, "1", ex=300)
+        await _persist_node_timing_audit(
+            session_id=session_id,
+            trace_id=trace_id,
+            run_id=run_id,
+            node_timings=node_timings,
+        )
     except Exception as exc:
         _LOGGER.exception("graph streaming error run_id=%s", run_id)
         try:
             await _push("error", {"message": str(exc)})
         except Exception:
             pass
+        try:
+            await _persist_node_timing_audit(
+                session_id=session_id,
+                trace_id=trace_id,
+                run_id=run_id,
+                node_timings=node_timings if "node_timings" in locals() else [],
+                error_message=str(exc),
+            )
+        except Exception:
+            pass
+
+
+async def _persist_node_timing_audit(
+    *,
+    session_id: str,
+    trace_id: str,
+    run_id: str,
+    node_timings: list[dict[str, Any]],
+    error_message: str | None = None,
+) -> None:
+    if not node_timings:
+        return
+    try:
+        await services.audit_service.log_request(
+            trace_id=trace_id,
+            run_id=run_id,
+            session_id=session_id,
+            intent="node_timing",
+            api_params={"node_timings": node_timings},
+            api_latency_ms=sum(int(item.get("duration_ms", 0) or 0) for item in node_timings),
+            final_answer_summary="graph node timing metrics",
+            error_stack=error_message,
+        )
+    except Exception as exc:
+        _LOGGER.warning("failed to persist node timing audit run_id=%s err=%s", run_id, exc)
