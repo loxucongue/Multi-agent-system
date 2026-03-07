@@ -345,8 +345,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     set((state) => {
       const streamText = state.currentStreamText;
       const normalizedFallback = (fallbackText ?? "").trim();
-      const shouldAppendAssistant = streamText.trim().length > 0 || normalizedFallback.length > 0;
-      const finalContent = streamText.trim().length > 0 ? streamText : normalizedFallback;
+      const autoFallback =
+        fallbackText === undefined
+          ? state.routeCards.length > 0
+            ? "已为您整理出可参考的线路，您可以先查看右侧候选方案。"
+            : "本轮处理已完成，如未看到推荐结果，请重试或调整条件。"
+          : normalizedFallback;
+      const shouldAppendAssistant = streamText.trim().length > 0 || autoFallback.length > 0;
+      const finalContent = streamText.trim().length > 0 ? streamText : autoFallback;
       const nextMessages = shouldAppendAssistant
         ? [
             ...state.messages,
@@ -497,7 +503,21 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const detail = await apiRequest<SessionDetailResponse>(`/session/${sessionId}`);
       get().hydrateSession(detail);
     } catch (error) {
-      set({ error: toErrorMessage(error) });
+      const message = toErrorMessage(error);
+      if (message.includes("404") || message.includes("410")) {
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(CURRENT_SESSION_KEY);
+        }
+        try {
+          await get().createSession();
+          set({ error: "会话已过期，已为您创建新会话。" });
+          return;
+        } catch {
+          set({ error: "会话已过期，且创建新会话失败，请稍后重试。" });
+          return;
+        }
+      }
+      set({ error: message });
     }
   },
 

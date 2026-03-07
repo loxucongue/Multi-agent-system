@@ -62,6 +62,19 @@ async def compare_routes(
     if len(compare_items) < 2:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="至少需要2条线路进行对比")
 
+    # Keep persisted session state aligned with compare action for next-turn routing.
+    try:
+        await services.session_service.update_session_state(
+            session_id,
+            {
+                "stage": "comparing",
+                "last_intent": "compare",
+            },
+        )
+    except Exception:
+        # Do not fail compare payload response when state sync fails.
+        pass
+
     return CompareData(routes=compare_items)
 
 

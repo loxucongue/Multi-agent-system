@@ -97,14 +97,7 @@ export function useSSE() {
 
         eventSource.addEventListener("done", () => {
           reconnectCountRef.current = 0;
-          const state = useChatStore.getState();
-          const fallbackText =
-            state.currentStreamText.trim().length > 0
-              ? undefined
-              : state.routeCards.length > 0
-                ? "已为您整理出可参考的线路，您可以先查看右侧候选方案。"
-                : "本轮处理已完成，如未看到推荐结果，请重试或调整条件。";
-          finishStream(fallbackText);
+          finishStream();
           disconnect();
         });
 
@@ -115,7 +108,7 @@ export function useSSE() {
 
           const data = safeJsonParse<{ message?: string }>(event.data);
           setError(data?.message ?? "服务端返回错误");
-          finishStream();
+          finishStream("");
           disconnect();
         });
 
@@ -133,7 +126,7 @@ export function useSSE() {
           }
 
           setError("连接中断，请重试");
-          finishStream();
+          finishStream("");
           disconnect();
         };
       };

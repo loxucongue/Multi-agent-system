@@ -84,6 +84,7 @@ export default function ChatPage() {
     setCompareDrawerVisible,
     setCompareData,
     setError,
+    applyStatePatch,
     addAssistantMessage,
   } = useChatStore(
     useShallow((state) => ({
@@ -107,6 +108,7 @@ export default function ChatPage() {
       setCompareDrawerVisible: state.setCompareDrawerVisible,
       setCompareData: state.setCompareData,
       setError: state.setError,
+      applyStatePatch: state.applyStatePatch,
       addAssistantMessage: state.addAssistantMessage,
     })),
   );
@@ -256,11 +258,12 @@ export default function ChatPage() {
         });
         setCompareData(compare);
         setCompareDrawerVisible(true);
+        applyStatePatch({ stage: "comparing" });
       } catch {
         setError("获取对比数据失败，请稍后重试");
       }
     },
-    [activeCheckedForCompare, activeRouteId, sessionId, setCompareData, setCompareDrawerVisible, setError],
+    [activeCheckedForCompare, activeRouteId, applyStatePatch, sessionId, setCompareData, setCompareDrawerVisible, setError],
   );
 
   const handleAICompare = useCallback(async () => {
