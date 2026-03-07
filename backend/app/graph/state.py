@@ -128,6 +128,7 @@ class GraphState(TypedDict):
     response_tokens: list[str] | None
     response_streamed: bool | None
     token_emitter: Any | None
+    llm_calls: Annotated[list[dict[str, Any]], list_append_reducer]
 
     ui_actions: Annotated[list[dict[str, Any]], list_append_reducer]
     cards: Annotated[list[dict[str, Any]], list_append_reducer]
@@ -173,6 +174,7 @@ def create_initial_state(
         response_tokens=None,
         response_streamed=None,
         token_emitter=None,
+        llm_calls=[],
         ui_actions=[],
         cards=[],
         state_patches={},

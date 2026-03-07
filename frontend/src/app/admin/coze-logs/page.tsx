@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { App, Button, Card, DatePicker, Descriptions, Input, Select, Space, Table, Tag, Typography } from "antd";
+import { App, Button, Card, DatePicker, Descriptions, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
@@ -109,7 +109,9 @@ export default function AdminCozeLogsPage() {
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(20);
   const [total, setTotal] = useState(0);
-  const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
+
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [activeLog, setActiveLog] = useState<CozeLog | null>(null);
 
   const handleAuthError = (error: unknown) => {
     const text = error instanceof Error ? error.message : "请求失败";
@@ -244,6 +246,22 @@ export default function AdminCozeLogsPage() {
             "-"
           ),
       },
+      {
+        title: "操作",
+        key: "actions",
+        width: 90,
+        render: (_, record) => (
+          <Button
+            size="small"
+            onClick={() => {
+              setActiveLog(record);
+              setDetailOpen(true);
+            }}
+          >
+            详情
+          </Button>
+        ),
+      },
     ],
     [],
   );
@@ -301,37 +319,6 @@ export default function AdminCozeLogsPage() {
           loading={loading}
           columns={columns}
           dataSource={logs}
-          expandable={{
-            expandedRowKeys,
-            onExpandedRowsChange: (keys) => setExpandedRowKeys([...keys]),
-            expandedRowRender: (record) => (
-              <Descriptions column={2} size="small" bordered>
-                <Descriptions.Item label="工具类型">{TOOL_TYPE_LABEL[record.tool_type] ?? record.tool_type}</Descriptions.Item>
-                <Descriptions.Item label="调用类型">{record.call_type}</Descriptions.Item>
-                <Descriptions.Item label="workflow_id">{record.workflow_id ?? "-"}</Descriptions.Item>
-                <Descriptions.Item label="endpoint">{record.endpoint}</Descriptions.Item>
-                <Descriptions.Item label="coze_logid">{record.coze_logid ?? "-"}</Descriptions.Item>
-                <Descriptions.Item label="response_code">{record.response_code ?? "-"}</Descriptions.Item>
-                <Descriptions.Item label="输入" span={2}>
-                  <Text style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{safePretty(record.input_payload)}</Text>
-                </Descriptions.Item>
-                <Descriptions.Item label="输出" span={2}>
-                  <Text style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{safePretty(record.output_payload)}</Text>
-                </Descriptions.Item>
-                <Descriptions.Item label="原始请求参数" span={2}>
-                  <Text style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{safePretty(record.request_params)}</Text>
-                </Descriptions.Item>
-                <Descriptions.Item label="原始响应数据" span={2}>
-                  <Text style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{safePretty(record.response_data)}</Text>
-                </Descriptions.Item>
-                {record.error_message ? (
-                  <Descriptions.Item label="错误信息" span={2}>
-                    <Text type="danger" style={{ whiteSpace: "pre-wrap" }}>{record.error_message}</Text>
-                  </Descriptions.Item>
-                ) : null}
-              </Descriptions>
-            ),
-          }}
           pagination={{
             current: page,
             pageSize: size,
@@ -339,9 +326,62 @@ export default function AdminCozeLogsPage() {
             showSizeChanger: true,
             onChange: (nextPage, nextSize) => void loadLogs(nextPage, nextSize),
           }}
-          scroll={{ x: 1500 }}
+          scroll={{ x: 1600 }}
         />
       </Card>
+
+      <Modal
+        title={activeLog ? `Coze 日志详情 · ${activeLog.trace_id}` : "Coze 日志详情"}
+        open={detailOpen}
+        width={1000}
+        footer={null}
+        onCancel={() => {
+          setDetailOpen(false);
+          setActiveLog(null);
+        }}
+        destroyOnHidden
+      >
+        {activeLog ? (
+          <Descriptions column={2} size="small" bordered>
+            <Descriptions.Item label="id">{activeLog.id}</Descriptions.Item>
+            <Descriptions.Item label="时间">{dayjs(activeLog.created_at).format("YYYY-MM-DD HH:mm:ss")}</Descriptions.Item>
+            <Descriptions.Item label="trace_id">{activeLog.trace_id}</Descriptions.Item>
+            <Descriptions.Item label="session_id">{activeLog.session_id}</Descriptions.Item>
+            <Descriptions.Item label="工具类型">{TOOL_TYPE_LABEL[activeLog.tool_type] ?? activeLog.tool_type}</Descriptions.Item>
+            <Descriptions.Item label="调用类型">{activeLog.call_type}</Descriptions.Item>
+            <Descriptions.Item label="workflow_id">{activeLog.workflow_id ?? "-"}</Descriptions.Item>
+            <Descriptions.Item label="endpoint">{activeLog.endpoint}</Descriptions.Item>
+            <Descriptions.Item label="status">{activeLog.status}</Descriptions.Item>
+            <Descriptions.Item label="response_code">{activeLog.response_code ?? "-"}</Descriptions.Item>
+            <Descriptions.Item label="latency_ms">{activeLog.latency_ms}</Descriptions.Item>
+            <Descriptions.Item label="token_count">{activeLog.token_count ?? "-"}</Descriptions.Item>
+            <Descriptions.Item label="coze_logid">{activeLog.coze_logid ?? "-"}</Descriptions.Item>
+            <Descriptions.Item label="debug_url">
+              {activeLog.debug_url ? (
+                <Link href={activeLog.debug_url} target="_blank" rel="noreferrer">查看</Link>
+              ) : "-"}
+            </Descriptions.Item>
+
+            <Descriptions.Item label="输入(input_payload)" span={2}>
+              <Text style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{safePretty(activeLog.input_payload)}</Text>
+            </Descriptions.Item>
+            <Descriptions.Item label="输出(output_payload)" span={2}>
+              <Text style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{safePretty(activeLog.output_payload)}</Text>
+            </Descriptions.Item>
+            <Descriptions.Item label="原始请求(request_params)" span={2}>
+              <Text style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{safePretty(activeLog.request_params)}</Text>
+            </Descriptions.Item>
+            <Descriptions.Item label="原始响应(response_data)" span={2}>
+              <Text style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>{safePretty(activeLog.response_data)}</Text>
+            </Descriptions.Item>
+            <Descriptions.Item label="错误信息(error_message)" span={2}>
+              <Text type={activeLog.error_message ? "danger" : undefined} style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>
+                {safePretty(activeLog.error_message)}
+              </Text>
+            </Descriptions.Item>
+          </Descriptions>
+        ) : null}
+      </Modal>
     </div>
   );
 }

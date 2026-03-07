@@ -129,6 +129,7 @@ async def router_intent_node(state: GraphState) -> dict[str, Any]:
     secondary_intent: str | None = None
     extracted_entities_raw: Any = {}
     reasoning = ""
+    llm_call_record: dict[str, Any] | None = None
 
     llm_client, should_close = _resolve_llm_client()
     try:
@@ -146,6 +147,12 @@ async def router_intent_node(state: GraphState) -> dict[str, Any]:
         secondary_intent = _normalize_intent(llm_result.get("secondary_intent"))
         extracted_entities_raw = llm_result.get("extracted_entities") or {}
         reasoning = str(llm_result.get("reasoning") or "")
+        llm_call_record = {
+            "node": "router",
+            "status": "success",
+            "input": _truncate_messages(prompt_messages),
+            "output": _truncate_obj(llm_result),
+        }
     except Exception as exc:
         fallback = _fallback_intent_by_keywords(user_message)
         intent = fallback.intent
@@ -154,6 +161,12 @@ async def router_intent_node(state: GraphState) -> dict[str, Any]:
         extracted_entities_raw = {}
         reasoning = "llm_failed_fallback"
         _LOGGER.warning("router llm classify failed, use keyword fallback: %s", exc)
+        llm_call_record = {
+            "node": "router",
+            "status": "fallback",
+            "error": str(exc),
+            "output": {"intent": intent, "reasoning": reasoning},
+        }
     finally:
         if should_close:
             await llm_client.aclose()
@@ -205,13 +218,16 @@ async def router_intent_node(state: GraphState) -> dict[str, Any]:
     if secondary_intent == intent:
         secondary_intent = None
 
-    return {
+    payload = {
         "last_intent": intent,
         "secondary_intent": secondary_intent,
         "user_profile": updated_profile,
         "target_route_id": target_route_id,
         "request_human": request_human,
     }
+    if llm_call_record:
+        payload["llm_calls"] = [llm_call_record]
+    return payload
 
 
 def _resolve_llm_client() -> tuple[object, bool]:
@@ -521,3 +537,23 @@ def _to_int_or_none(value: Any) -> int | None:
 
 def _ensure_user_profile(value: Any) -> UserProfile:
     return _ensure_profile_shared(value)
+
+
+def _truncate_messages(messages: list[dict[str, Any]], max_chars: int = 600) -> list[dict[str, str]]:
+    truncated: list[dict[str, str]] = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        role = str(msg.get("role") or "")
+        content = str(msg.get("content") or "")
+        if len(content) > max_chars:
+            content = f"{content[:max_chars]}..."
+        truncated.append({"role": role, "content": content})
+    return truncated
+
+
+def _truncate_obj(value: Any, max_chars: int = 1200) -> Any:
+    text = str(value)
+    if len(text) <= max_chars:
+        return value
+    return f"{text[:max_chars]}..."

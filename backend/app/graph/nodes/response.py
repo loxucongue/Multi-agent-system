@@ -31,8 +31,9 @@ async def response_generation_node(state: GraphState) -> dict[str, Any]:
     response_streamed = False
     if existing_text and reuse_existing_text:
         response_text = existing_text
+        llm_call_record = None
     else:
-        response_text, response_tokens, response_streamed = await _generate_text(
+        response_text, response_tokens, response_streamed, llm_call_record = await _generate_text(
             intent,
             tool_results,
             user_message,
@@ -63,6 +64,8 @@ async def response_generation_node(state: GraphState) -> dict[str, Any]:
         payload["response_streamed"] = True
     elif response_tokens:
         payload["response_tokens"] = response_tokens
+    if llm_call_record:
+        payload["llm_calls"] = [llm_call_record]
     return payload
 
 
@@ -85,14 +88,14 @@ async def _generate_text(
     tool_results: dict[str, Any],
     user_message: str,
     state: GraphState,
-) -> tuple[str, list[str], bool]:
+) -> tuple[str, list[str], bool, dict[str, Any] | None]:
     """Generate final text from structured data using streaming LLM output."""
 
     if str(state.get("error") or "").strip():
-        return "抱歉，处理请求时遇到问题，请稍后重试。", [], False
+        return "抱歉，处理请求时遇到问题，请稍后重试。", [], False, None
 
     if tool_results.get("error"):
-        return _fallback_text_from_tool_results(intent, tool_results), [], False
+        return _fallback_text_from_tool_results(intent, tool_results), [], False, None
 
     if intent == "route_recommend":
         route_details = tool_results.get("route_details")
@@ -111,7 +114,7 @@ async def _generate_text(
             return (
                 f"抱歉，当前匹配到的线路与「{destination_text}」不完全一致，"
                 "我正在重新为您筛选。您也可以补充出发时间或预算，让匹配更精准。"
-            ), [], False
+            ), [], False, None
 
         has_results = (
             isinstance(route_details, list) and bool(route_details)
@@ -121,10 +124,10 @@ async def _generate_text(
 
         if not has_results:
             if isinstance(candidates_without_id, list) and candidates_without_id:
-                return "我找到了相关线路，但数据格式异常，正在修复。请稍后重试或换个关键词。", [], False
+                return "我找到了相关线路，但数据格式异常，正在修复。请稍后重试或换个关键词。", [], False, None
 
             if isinstance(candidates_filtered_out, list) and candidates_filtered_out:
-                return "暂时没有筛选到符合您当前条件的线路。您可以补充预算、出发时间或偏好，我马上重新匹配。", [], False
+                return "暂时没有筛选到符合您当前条件的线路。您可以补充预算、出发时间或偏好，我马上重新匹配。", [], False, None
 
             profile = state.get("user_profile")
             destinations: list[str] = []
@@ -136,8 +139,8 @@ async def _generate_text(
                     destinations = [str(item).strip() for item in raw_destinations if str(item).strip()]
 
             if destinations:
-                return f"抱歉，暂未找到与「{'、'.join(destinations)}」相关的线路。您可以调整条件后我再为您匹配。", [], False
-            return "抱歉，暂未匹配到合适的线路。请告诉我目的地和天数，我继续为您查找。", [], False
+                return f"抱歉，暂未找到与「{'、'.join(destinations)}」相关的线路。您可以调整条件后我再为您匹配。", [], False, None
+            return "抱歉，暂未匹配到合适的线路。请告诉我目的地和天数，我继续为您查找。", [], False, None
 
     serializable_state = _state_for_prompt(state)
     messages = await build_response_prompt(
@@ -182,17 +185,32 @@ async def _generate_text(
                     streamed_via_callback = True
     except Exception as exc:
         _LOGGER.warning("response generation stream failed, fallback text used: %s", exc)
-        return _fallback_text_from_tool_results(intent, tool_results), [], False
+        return _fallback_text_from_tool_results(intent, tool_results), [], False, {
+            "node": "response",
+            "status": "fallback",
+            "error": str(exc),
+            "input": _truncate_messages(messages),
+        }
     finally:
         if should_close:
             await llm_client.aclose()
 
     merged = "".join(chunks).strip()
     if merged:
+        llm_call_record = {
+            "node": "response",
+            "status": "success",
+            "input": _truncate_messages(messages),
+            "output": _truncate_text(merged),
+        }
         if streamed_via_callback:
-            return merged, [], True
-        return merged, chunks, False
-    return _fallback_text_from_tool_results(intent, tool_results), [], False
+            return merged, [], True, llm_call_record
+        return merged, chunks, False, llm_call_record
+    return _fallback_text_from_tool_results(intent, tool_results), [], False, {
+        "node": "response",
+        "status": "fallback",
+        "input": _truncate_messages(messages),
+    }
 
 
 def _build_ui_actions(intent: str, tool_results: dict[str, Any], state: GraphState) -> list[dict[str, Any]]:
@@ -413,3 +431,23 @@ def _normalize_int_list(values: Any) -> list[int]:
 
 def _to_int_or_none(value: Any) -> int | None:
     return _to_int_or_none_shared(value)
+
+
+def _truncate_messages(messages: list[dict[str, Any]], max_chars: int = 800) -> list[dict[str, str]]:
+    truncated: list[dict[str, str]] = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        role = str(msg.get("role") or "")
+        content = str(msg.get("content") or "")
+        if len(content) > max_chars:
+            content = f"{content[:max_chars]}..."
+        truncated.append({"role": role, "content": content})
+    return truncated
+
+
+def _truncate_text(text: str, max_chars: int = 1600) -> str:
+    value = str(text or "")
+    if len(value) <= max_chars:
+        return value
+    return f"{value[:max_chars]}..."

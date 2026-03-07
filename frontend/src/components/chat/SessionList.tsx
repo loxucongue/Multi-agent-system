@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { ClockCircleOutlined, MessageOutlined, PlusOutlined } from "@ant-design/icons";
+import { MessageOutlined, PlusOutlined } from "@ant-design/icons";
 import { Button, Empty, List, Skeleton, Space, Typography } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -194,17 +194,27 @@ function Section({
                   background: active ? "#eaf1ff" : "#f7f9fd",
                 }}
               >
-                <div style={{ width: "100%" }}>
-                  <Space size={8} align="center" style={{ marginBottom: 6 }}>
-                    <MessageOutlined style={{ color: "#6a7da6" }} />
-                    <Text strong style={{ color: "#213457" }}>
+                <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
+                  <Space size={8} align="center" style={{ width: "100%" }}>
+                    <MessageOutlined style={{ color: "#6a7da6", flex: "0 0 auto" }} />
+                    <Text
+                      strong
+                      style={{
+                        color: "#213457",
+                        display: "block",
+                        minWidth: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
                       {item.title}
                     </Text>
                   </Space>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    <ClockCircleOutlined style={{ marginRight: 4 }} />
-                    {formatTime(item.last_active_at)}
-                  </Text>
+                  <div style={{ fontSize: 11, color: "#8a94a6", lineHeight: 1.35, paddingLeft: 22 }}>
+                    <div>创建：{formatTime(item.created_at)}</div>
+                    <div>最近：{formatTime(item.last_active_at)}</div>
+                  </div>
                 </div>
               </Button>
             </List.Item>

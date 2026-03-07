@@ -173,13 +173,19 @@ def _extract_str(data: dict[str, Any], key: str) -> str | None:
 
 
 def _extract_api_params(state: GraphState, tool_results: dict[str, Any]) -> dict[str, Any] | None:
+    params: dict[str, Any] = {}
     if isinstance(state.get("api_params"), dict):
-        return state["api_params"]
-    if isinstance(tool_results.get("params"), dict):
-        return tool_results["params"]
-    if isinstance(tool_results.get("api_params"), dict):
-        return tool_results["api_params"]
-    return None
+        params.update(state["api_params"])
+    elif isinstance(tool_results.get("params"), dict):
+        params.update(tool_results["params"])
+    elif isinstance(tool_results.get("api_params"), dict):
+        params.update(tool_results["api_params"])
+
+    llm_calls = state.get("llm_calls")
+    if isinstance(llm_calls, list) and llm_calls:
+        params["llm_calls"] = llm_calls
+
+    return params or None
 
 
 def _extract_topk_results(state: GraphState, tool_results: dict[str, Any]) -> Any:

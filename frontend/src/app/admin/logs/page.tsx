@@ -1,6 +1,6 @@
 "use client";
 
-import { App, Button, Card, DatePicker, Descriptions, Input, Space, Table, Typography } from "antd";
+import { App, Button, Card, DatePicker, Descriptions, Input, Modal, Space, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
@@ -18,13 +18,18 @@ interface AuditLog {
   run_id: string;
   session_id: string;
   intent: string;
+  search_query?: string | null;
+  topk_results?: unknown;
   route_id?: number | null;
+  db_query_summary?: string | null;
+  api_params?: Record<string, unknown> | null;
   api_latency_ms?: number | null;
   final_answer_summary?: string | null;
-  token_usage?: number | null;
+  token_usage?: Record<string, unknown> | null;
   error_stack?: string | null;
+  coze_logid?: string | null;
+  coze_debug_url?: string | null;
   created_at: string;
-  [key: string]: unknown;
 }
 
 interface LogsResponse {
@@ -33,6 +38,16 @@ interface LogsResponse {
   page: number;
   size: number;
 }
+
+const toDisplay = (value: unknown): string => {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  return JSON.stringify(value, null, 2);
+};
 
 export default function AdminLogsPage() {
   const router = useRouter();
@@ -52,7 +67,9 @@ export default function AdminLogsPage() {
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(20);
   const [total, setTotal] = useState(0);
-  const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
+
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [activeLog, setActiveLog] = useState<AuditLog | null>(null);
 
   const handleAuthError = (error: unknown) => {
     const text = error instanceof Error ? error.message : "请求失败";
@@ -70,6 +87,7 @@ export default function AdminLogsPage() {
       const params = new URLSearchParams();
       params.set("page", String(nextPage));
       params.set("size", String(nextSize));
+
       if (traceId.trim()) {
         params.set("trace_id", traceId.trim());
       }
@@ -122,17 +140,19 @@ export default function AdminLogsPage() {
         ellipsis: true,
       },
       {
-        title: "intent",
+        title: "意图",
         dataIndex: "intent",
         key: "intent",
         width: 120,
       },
       {
-        title: "route_id",
-        dataIndex: "route_id",
-        key: "route_id",
-        width: 90,
-        render: (value: number | null | undefined) => value ?? "-",
+        title: "LLM调用",
+        key: "llm_calls_count",
+        width: 110,
+        render: (_, record) => {
+          const llmCalls = (record.api_params as { llm_calls?: unknown } | null | undefined)?.llm_calls;
+          return Array.isArray(llmCalls) ? llmCalls.length : 0;
+        },
       },
       {
         title: "耗时(ms)",
@@ -142,16 +162,37 @@ export default function AdminLogsPage() {
         render: (value: number | null | undefined) => value ?? "-",
       },
       {
-        title: "answer_summary",
+        title: "回答摘要",
         dataIndex: "final_answer_summary",
         key: "final_answer_summary",
         render: (value: string | null | undefined) => (
           <Text>{value ? `${value.slice(0, 80)}${value.length > 80 ? "..." : ""}` : "-"}</Text>
         ),
       },
+      {
+        title: "操作",
+        key: "actions",
+        width: 90,
+        render: (_, record) => (
+          <Button
+            size="small"
+            onClick={() => {
+              setActiveLog(record);
+              setDetailOpen(true);
+            }}
+          >
+            详情
+          </Button>
+        ),
+      },
     ],
     [],
   );
+
+  const llmCalls = useMemo(() => {
+    const value = (activeLog?.api_params as { llm_calls?: unknown } | undefined)?.llm_calls;
+    return Array.isArray(value) ? value : [];
+  }, [activeLog]);
 
   return (
     <Card title="审计日志">
@@ -179,12 +220,7 @@ export default function AdminLogsPage() {
             setRange([value[0], value[1]]);
           }}
         />
-        <Button
-          type="primary"
-          onClick={() => {
-            void loadLogs(1, size);
-          }}
-        >
+        <Button type="primary" onClick={() => void loadLogs(1, size)}>
           搜索
         </Button>
         <Button
@@ -204,21 +240,6 @@ export default function AdminLogsPage() {
         loading={loading}
         columns={columns}
         dataSource={logs}
-        expandable={{
-          expandedRowKeys,
-          onExpandedRowsChange: (keys) => setExpandedRowKeys([...keys]),
-          expandedRowRender: (record) => (
-            <Descriptions column={2} size="small" bordered>
-              {Object.entries(record).map(([k, v]) => (
-                <Descriptions.Item key={k} label={k} span={k === "error_stack" || k === "db_query_summary" ? 2 : 1}>
-                  <Text style={{ whiteSpace: "pre-wrap" }}>
-                    {typeof v === "object" && v !== null ? JSON.stringify(v, null, 2) : String(v ?? "-")}
-                  </Text>
-                </Descriptions.Item>
-              ))}
-            </Descriptions>
-          ),
-        }}
         pagination={{
           current: page,
           pageSize: size,
@@ -228,8 +249,69 @@ export default function AdminLogsPage() {
             void loadLogs(p, s);
           },
         }}
-        scroll={{ x: 1100 }}
+        scroll={{ x: 1200 }}
       />
+
+      <Modal
+        title={activeLog ? `日志详情 · ${activeLog.trace_id}` : "日志详情"}
+        open={detailOpen}
+        width={1000}
+        footer={null}
+        onCancel={() => {
+          setDetailOpen(false);
+          setActiveLog(null);
+        }}
+        destroyOnHidden
+      >
+        {activeLog ? (
+          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <Descriptions column={2} bordered size="small">
+              <Descriptions.Item label="trace_id">{activeLog.trace_id}</Descriptions.Item>
+              <Descriptions.Item label="run_id">{activeLog.run_id}</Descriptions.Item>
+              <Descriptions.Item label="session_id">{activeLog.session_id}</Descriptions.Item>
+              <Descriptions.Item label="intent">{activeLog.intent}</Descriptions.Item>
+              <Descriptions.Item label="route_id">{activeLog.route_id ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="api_latency_ms">{activeLog.api_latency_ms ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="coze_logid">{activeLog.coze_logid ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="created_at">{dayjs(activeLog.created_at).format("YYYY-MM-DD HH:mm:ss")}</Descriptions.Item>
+
+              <Descriptions.Item label="search_query" span={2}>
+                <Text style={{ whiteSpace: "pre-wrap" }}>{toDisplay(activeLog.search_query)}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="final_answer_summary" span={2}>
+                <Text style={{ whiteSpace: "pre-wrap" }}>{toDisplay(activeLog.final_answer_summary)}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="topk_results" span={2}>
+                <Text style={{ whiteSpace: "pre-wrap" }}>{toDisplay(activeLog.topk_results)}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="db_query_summary" span={2}>
+                <Text style={{ whiteSpace: "pre-wrap" }}>{toDisplay(activeLog.db_query_summary)}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="token_usage" span={2}>
+                <Text style={{ whiteSpace: "pre-wrap" }}>{toDisplay(activeLog.token_usage)}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="error_stack" span={2}>
+                <Text style={{ whiteSpace: "pre-wrap", color: "#cf1322" }}>{toDisplay(activeLog.error_stack)}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="api_params" span={2}>
+                <Text style={{ whiteSpace: "pre-wrap" }}>{toDisplay(activeLog.api_params)}</Text>
+              </Descriptions.Item>
+            </Descriptions>
+
+            <Card size="small" title={`大模型调用输入输出（${llmCalls.length}）`}>
+              {llmCalls.length === 0 ? (
+                <Text type="secondary">该条日志未记录 LLM 输入输出。</Text>
+              ) : (
+                llmCalls.map((call, index) => (
+                  <Card key={index} size="small" style={{ marginBottom: 10 }} title={`调用 #${index + 1}`}>
+                    <Text style={{ whiteSpace: "pre-wrap" }}>{toDisplay(call)}</Text>
+                  </Card>
+                ))
+              )}
+            </Card>
+          </Space>
+        ) : null}
+      </Modal>
     </Card>
   );
 }

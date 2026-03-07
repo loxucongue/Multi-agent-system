@@ -19,6 +19,20 @@ interface PromptVersion {
   created_at: string;
 }
 
+const NODE_DESCRIPTIONS: Record<string, string> = {
+  intent_classification: "意图识别：判断用户本轮问题属于推荐、追问、签证、对比等哪一类。",
+  requirement_collection: "需求收集：补齐目的地、天数、预算等槽位，决定是否进入检索。",
+  response_generation: "回复生成：基于工具结果生成最终面向用户的自然语言答案。",
+  chitchat: "闲聊回复：处理非业务闲聊并自然引导回旅游咨询。",
+  compare_style: "对比风格判断：为线路对比推断行程节奏（紧凑/轻松等）。",
+  kb_query_gen: "检索词生成：根据画像与上下文生成更精准的知识库查询词。",
+  kb_result_eval: "检索结果评估：判断知识库返回结果是否与用户需求相关。",
+  visa_result_eval: "签证结果评估：判断签证检索结果是否命中目标国家与问题。",
+};
+
+const getNodeDescription = (nodeName: string): string =>
+  NODE_DESCRIPTIONS[nodeName] ?? "该节点用于特定 LLM 任务，请结合业务链路查看。";
+
 export default function AdminPromptsPage() {
   const router = useRouter();
   const { message } = App.useApp();
@@ -62,7 +76,6 @@ export default function AdminPromptsPage() {
         names = Array.from(new Set(active.map((item) => item.node_name))).sort();
       }
       setNodeNames(names);
-
       if (selectedNode && names.includes(selectedNode)) {
         return;
       }
@@ -173,7 +186,7 @@ export default function AdminPromptsPage() {
   );
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 12, minHeight: "calc(100vh - 120px)" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 12, minHeight: "calc(100vh - 120px)" }}>
       <Card
         title="节点列表"
         loading={loadingNodes}
@@ -186,13 +199,33 @@ export default function AdminPromptsPage() {
         <List
           dataSource={nodeNames}
           locale={{ emptyText: "暂无节点" }}
-          renderItem={(name) => (
-            <List.Item style={{ paddingInline: 0 }}>
-              <Button type={selectedNode === name ? "primary" : "default"} block onClick={() => setSelectedNode(name)}>
-                {name}
-              </Button>
-            </List.Item>
-          )}
+          renderItem={(name) => {
+            const active = selectedNode === name;
+            return (
+              <List.Item style={{ paddingInline: 0 }}>
+                <Button
+                  type={active ? "primary" : "default"}
+                  block
+                  onClick={() => setSelectedNode(name)}
+                  style={{ height: "auto", textAlign: "left", paddingBlock: 10 }}
+                >
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+                    <span style={{ fontWeight: 600 }}>{name}</span>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        opacity: active ? 0.9 : 0.75,
+                        whiteSpace: "normal",
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      {getNodeDescription(name)}
+                    </span>
+                  </div>
+                </Button>
+              </List.Item>
+            );
+          }}
         />
       </Card>
 
@@ -218,6 +251,13 @@ export default function AdminPromptsPage() {
           </Space>
         }
       >
+        {selectedNode ? (
+          <Card size="small" style={{ marginBottom: 12 }}>
+            <Text strong>节点作用：</Text>
+            <Text style={{ marginLeft: 8 }}>{getNodeDescription(selectedNode)}</Text>
+          </Card>
+        ) : null}
+
         <Table
           rowKey={(row) => `${row.node_name}-${row.version}`}
           columns={columns}
@@ -240,11 +280,7 @@ export default function AdminPromptsPage() {
           }
         >
           {previewVersion ? (
-            <TextArea
-              readOnly
-              value={previewVersion.content}
-              autoSize={{ minRows: 12, maxRows: 24 }}
-            />
+            <TextArea readOnly value={previewVersion.content} autoSize={{ minRows: 12, maxRows: 24 }} />
           ) : (
             <Text type="secondary">当前节点暂无可预览内容</Text>
           )}
@@ -297,3 +333,4 @@ export default function AdminPromptsPage() {
     </div>
   );
 }
+
