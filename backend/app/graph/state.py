@@ -176,7 +176,7 @@ def create_initial_state(
         ui_actions=[],
         cards=[],
         state_patches={},
-        slots_ready=bool(profile.destinations),
+        slots_ready=False,
         request_human=False,
         error=None,
     )

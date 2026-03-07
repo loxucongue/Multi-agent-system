@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import datetime
 from typing import Any
@@ -79,9 +80,9 @@ async def compare_node(state: GraphState) -> dict[str, Any]:
     rows_by_id: dict[int, Any] = {int(row.id): row for row in rows if getattr(row, "id", None) is not None}
     ordered_rows = [rows_by_id[rid] for rid in route_ids if rid in rows_by_id]
 
-    compare_items: list[CompareRouteItem] = []
-    for row in ordered_rows:
-        compare_items.append(await _build_compare_item(row, llm_client))
+    compare_items = list(
+        await asyncio.gather(*[_build_compare_item(row, llm_client) for row in ordered_rows])
+    )
 
     compare_data = CompareData(routes=compare_items)
     payload = compare_data.model_dump(mode="json")

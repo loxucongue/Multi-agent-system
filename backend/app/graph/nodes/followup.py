@@ -40,6 +40,7 @@ async def route_followup_node(state: GraphState) -> dict[str, Any]:
             return result
 
         _LOGGER.warning(f"followup route detail not found route_id={selected_route_id}")
+        result["active_route_id"] = None
 
     if candidate_route_ids:
         result["response_text"] = "您想了解哪一条线路的详情？可以点选候选线路，我再为您展开说明。"

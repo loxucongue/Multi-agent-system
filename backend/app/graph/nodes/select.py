@@ -181,11 +181,14 @@ def _candidate_match_score(
 
     # Destination is a hard filter when available.
     if destination_keywords and not any(keyword and keyword in combined for keyword in destination_keywords):
-        return 0
+        return -1
 
-    # Destination match should dominate ranking; extra dimensions refine order.
-    score = 100 if destination_keywords else 1
-    score += sum(1 for keyword in bonus_keywords if keyword and keyword in combined)
+    # No profile keywords: keep candidates available for downstream ranking/fallback.
+    if not destination_keywords and not bonus_keywords:
+        return 1
+
+    # Additional dimensions only provide soft boosts.
+    score = sum(1 for keyword in bonus_keywords if keyword and keyword in combined)
     return score
 
 

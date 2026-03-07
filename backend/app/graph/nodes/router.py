@@ -476,23 +476,28 @@ def _resolve_multi_intents(found: set[str]) -> tuple[str | None, str | None]:
 
 
 def _fallback_intent_by_keywords(user_message: str) -> _FallbackDecision:
-    if _contains_any(user_message, _HUMAN_KEYWORDS):
-        return _FallbackDecision(intent="chitchat", request_human=True)
+    request_human = _contains_any(user_message, _HUMAN_KEYWORDS)
+    matched_intents: set[str] = set()
+
     if _parse_route_index_from_message(user_message) is not None:
-        return _FallbackDecision(intent="route_followup")
+        matched_intents.add("route_followup")
     if _contains_any(user_message, _PRICE_KEYWORDS):
-        return _FallbackDecision(intent="price_schedule")
+        matched_intents.add("price_schedule")
     if _contains_any(user_message, _COMPARE_KEYWORDS):
-        return _FallbackDecision(intent="compare")
+        matched_intents.add("compare")
     if _contains_any(user_message, _VISA_KEYWORDS):
-        return _FallbackDecision(intent="visa")
+        matched_intents.add("visa")
     if _contains_any(user_message, _EXTERNAL_KEYWORDS):
-        return _FallbackDecision(intent="external_info")
+        matched_intents.add("external_info")
     if _contains_any(user_message, _REMATCH_KEYWORDS):
-        return _FallbackDecision(intent="rematch")
+        matched_intents.add("rematch")
     if _contains_any(user_message, _FOLLOWUP_DETAIL_KEYWORDS):
-        return _FallbackDecision(intent="route_followup")
-    return _FallbackDecision(intent="route_recommend")
+        matched_intents.add("route_followup")
+    if request_human:
+        matched_intents.add("chitchat")
+
+    primary, _ = _resolve_multi_intents(matched_intents)
+    return _FallbackDecision(intent=primary or "route_recommend", request_human=request_human)
 
 
 def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
