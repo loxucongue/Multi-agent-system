@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from app.graph.state import GraphState
-from app.services.container import services
-from app.services.llm_client import LLMClient
+from app.graph.utils import resolve_llm_client as _resolve_llm_client_shared
 from app.services.prompt_defaults import DEFAULT_PROMPTS
 from app.services.prompt_service import get_active_prompt
 from app.utils.logger import get_logger
@@ -40,11 +39,8 @@ async def chitchat_node(state: GraphState) -> dict[str, str]:
     return {"response_text": _normalize_response(response_text)}
 
 
-def _resolve_llm_client() -> tuple[LLMClient, bool]:
-    try:
-        return services.llm_client, False
-    except Exception:
-        return LLMClient(), True
+def _resolve_llm_client() -> tuple[object, bool]:
+    return _resolve_llm_client_shared()
 
 
 def _normalize_response(text: str) -> str:
@@ -57,4 +53,3 @@ def _normalize_response(text: str) -> str:
             normalized += "。"
         normalized += _GUIDE_SUFFIX
     return normalized
-

@@ -6,9 +6,10 @@ import re
 from typing import Any
 
 from app.graph.state import GraphState, STAGE_COLLECTING, STAGE_REMATCH_COLLECTING
+from app.graph.utils import ensure_profile as _ensure_profile_shared
+from app.graph.utils import resolve_llm_client as _resolve_llm_client_shared
 from app.models.schemas import UserProfile
 from app.prompts.requirement_collection import build_collect_prompt
-from app.services.container import services
 from app.services.llm_client import LLMClient
 from app.utils.logger import get_logger
 
@@ -119,11 +120,7 @@ async def collect_requirements_node(state: GraphState) -> dict[str, Any]:
 
 
 def _ensure_profile(value: Any) -> UserProfile:
-    if isinstance(value, UserProfile):
-        return value
-    if isinstance(value, dict):
-        return UserProfile.model_validate(value)
-    return UserProfile()
+    return _ensure_profile_shared(value)
 
 
 def _get_missing_slots(profile: UserProfile) -> list[str]:
@@ -196,10 +193,7 @@ async def _generate_collect_questions(
 
 
 def _resolve_llm_client() -> tuple[LLMClient, bool]:
-    try:
-        return services.llm_client, False
-    except Exception:
-        return LLMClient(), True
+    return _resolve_llm_client_shared()
 
 
 def _format_questions(questions_value: Any) -> str:

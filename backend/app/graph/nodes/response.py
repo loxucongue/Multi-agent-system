@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 from app.graph.state import GraphState, STAGE_COLLECTING, STAGE_COMPARING, STAGE_RECOMMENDED
+from app.graph.utils import normalize_int_list as _normalize_int_list_shared
+from app.graph.utils import resolve_llm_client as _resolve_llm_client_shared
+from app.graph.utils import to_int_or_none as _to_int_or_none_shared
 from app.prompts.response_generation import build_response_prompt
-from app.services.container import services
 from app.services.llm_client import LLMClient
 from app.utils.logger import get_logger
 
@@ -24,11 +27,17 @@ async def response_generation_node(state: GraphState) -> dict[str, Any]:
 
     existing_text = str(state.get("response_text") or "").strip()
     reuse_existing_text = _should_reuse_existing_text(intent=intent, tool_results=tool_results)
-    response_text = (
-        existing_text
-        if existing_text and reuse_existing_text
-        else await _generate_text(intent, tool_results, user_message, state)
-    )
+    response_tokens: list[str] = []
+    response_streamed = False
+    if existing_text and reuse_existing_text:
+        response_text = existing_text
+    else:
+        response_text, response_tokens, response_streamed = await _generate_text(
+            intent,
+            tool_results,
+            user_message,
+            state,
+        )
 
     destination_mismatch = (
         intent == "route_recommend"
@@ -44,12 +53,17 @@ async def response_generation_node(state: GraphState) -> dict[str, Any]:
         state_patches["candidate_route_ids"] = []
         state_patches["stage"] = STAGE_COLLECTING
 
-    return {
+    payload: dict[str, Any] = {
         "response_text": response_text,
         "ui_actions": ui_actions,
         "cards": cards,
         "state_patches": state_patches,
     }
+    if response_streamed:
+        payload["response_streamed"] = True
+    elif response_tokens:
+        payload["response_tokens"] = response_tokens
+    return payload
 
 
 def _should_reuse_existing_text(intent: str, tool_results: dict[str, Any]) -> bool:
@@ -71,14 +85,14 @@ async def _generate_text(
     tool_results: dict[str, Any],
     user_message: str,
     state: GraphState,
-) -> str:
+) -> tuple[str, list[str], bool]:
     """Generate final text from structured data using streaming LLM output."""
 
     if str(state.get("error") or "").strip():
-        return "抱歉，处理请求时遇到问题，请稍后重试。"
+        return "抱歉，处理请求时遇到问题，请稍后重试。", [], False
 
     if tool_results.get("error"):
-        return _fallback_text_from_tool_results(intent, tool_results)
+        return _fallback_text_from_tool_results(intent, tool_results), [], False
 
     if intent == "route_recommend":
         route_details = tool_results.get("route_details")
@@ -97,7 +111,7 @@ async def _generate_text(
             return (
                 f"抱歉，当前匹配到的线路与「{destination_text}」不完全一致，"
                 "我正在重新为您筛选。您也可以补充出发时间或预算，让匹配更精准。"
-            )
+            ), [], False
 
         has_results = (
             isinstance(route_details, list) and bool(route_details)
@@ -107,10 +121,10 @@ async def _generate_text(
 
         if not has_results:
             if isinstance(candidates_without_id, list) and candidates_without_id:
-                return "我找到了相关线路，但数据格式异常，正在修复。请稍后重试或换个关键词。"
+                return "我找到了相关线路，但数据格式异常，正在修复。请稍后重试或换个关键词。", [], False
 
             if isinstance(candidates_filtered_out, list) and candidates_filtered_out:
-                return "暂时没有筛选到符合您当前条件的线路。您可以补充预算、出发时间或偏好，我马上重新匹配。"
+                return "暂时没有筛选到符合您当前条件的线路。您可以补充预算、出发时间或偏好，我马上重新匹配。", [], False
 
             profile = state.get("user_profile")
             destinations: list[str] = []
@@ -122,8 +136,8 @@ async def _generate_text(
                     destinations = [str(item).strip() for item in raw_destinations if str(item).strip()]
 
             if destinations:
-                return f"抱歉，暂未找到与「{'、'.join(destinations)}」相关的线路。您可以调整条件后我再为您匹配。"
-            return "抱歉，暂未匹配到合适的线路。请告诉我目的地和天数，我继续为您查找。"
+                return f"抱歉，暂未找到与「{'、'.join(destinations)}」相关的线路。您可以调整条件后我再为您匹配。", [], False
+            return "抱歉，暂未匹配到合适的线路。请告诉我目的地和天数，我继续为您查找。", [], False
 
     serializable_state = _state_for_prompt(state)
     messages = await build_response_prompt(
@@ -154,21 +168,31 @@ async def _generate_text(
 
     llm_client, should_close = _resolve_llm_client()
     chunks: list[str] = []
+    streamed_via_callback = False
+    token_emitter = state.get("token_emitter")
     try:
         async for delta in llm_client.chat_stream(messages=messages, temperature=0.5):
             if delta:
-                chunks.append(delta)
+                text = str(delta)
+                chunks.append(text)
+                if callable(token_emitter):
+                    maybe_result = token_emitter(text)
+                    if inspect.isawaitable(maybe_result):
+                        await maybe_result
+                    streamed_via_callback = True
     except Exception as exc:
         _LOGGER.warning("response generation stream failed, fallback text used: %s", exc)
-        return _fallback_text_from_tool_results(intent, tool_results)
+        return _fallback_text_from_tool_results(intent, tool_results), [], False
     finally:
         if should_close:
             await llm_client.aclose()
 
     merged = "".join(chunks).strip()
     if merged:
-        return merged
-    return _fallback_text_from_tool_results(intent, tool_results)
+        if streamed_via_callback:
+            return merged, [], True
+        return merged, chunks, False
+    return _fallback_text_from_tool_results(intent, tool_results), [], False
 
 
 def _build_ui_actions(intent: str, tool_results: dict[str, Any], state: GraphState) -> list[dict[str, Any]]:
@@ -267,10 +291,7 @@ def _build_state_patches(intent: str, tool_results: dict[str, Any], state: Graph
 
 
 def _resolve_llm_client() -> tuple[LLMClient, bool]:
-    try:
-        return services.llm_client, False
-    except Exception:
-        return LLMClient(), True
+    return _resolve_llm_client_shared()
 
 
 def _state_for_prompt(state: GraphState) -> dict[str, Any]:
@@ -387,20 +408,8 @@ def _fallback_text_from_tool_results(intent: str, tool_results: dict[str, Any]) 
 
 
 def _normalize_int_list(values: Any) -> list[int]:
-    if not isinstance(values, list):
-        return []
-    normalized: list[int] = []
-    for value in values:
-        parsed = _to_int_or_none(value)
-        if parsed is not None:
-            normalized.append(parsed)
-    return normalized
+    return _normalize_int_list_shared(values)
 
 
 def _to_int_or_none(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
+    return _to_int_or_none_shared(value)

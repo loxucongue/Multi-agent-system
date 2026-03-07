@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from app.graph.state import GraphState
+from app.graph.utils import ensure_profile as _ensure_profile_shared
 from app.models.schemas import UserProfile
 from app.services.container import services
 from app.utils.logger import get_logger
@@ -94,11 +95,7 @@ def _resolve_workflow_service() -> Any:
 
 
 def _ensure_profile(value: Any) -> UserProfile:
-    if isinstance(value, UserProfile):
-        return value
-    if isinstance(value, dict):
-        return UserProfile.model_validate(value)
-    return UserProfile()
+    return _ensure_profile_shared(value)
 
 
 def _infer_info_type(message: str) -> str:

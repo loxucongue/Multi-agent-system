@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.state import GraphState
+from app.graph.utils import normalize_int_list as _normalize_int_list_shared
+from app.graph.utils import to_int_or_none as _to_int_or_none_shared
 from app.services.container import services
 from app.utils.logger import get_logger
 
@@ -66,23 +68,11 @@ def _resolve_route_service() -> Any:
 
 
 def _normalize_int_list(values: Any) -> list[int]:
-    if not isinstance(values, list):
-        return []
-    normalized: list[int] = []
-    for value in values:
-        parsed = _to_int_or_none(value)
-        if parsed is not None:
-            normalized.append(parsed)
-    return normalized
+    return _normalize_int_list_shared(values)
 
 
 def _to_int_or_none(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
+    return _to_int_or_none_shared(value)
 
 
 def _to_int_or_zero(value: Any) -> int:

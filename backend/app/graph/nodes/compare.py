@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from app.graph.state import GraphState
+from app.graph.utils import normalize_int_list as _normalize_int_list_shared
 from app.models.schemas import (
     CompareData,
     CompareNextSchedule,
@@ -320,15 +321,7 @@ def _to_iso_str(value: Any) -> str:
 
 
 def _normalize_int_list(values: Any) -> list[int]:
-    if not isinstance(values, list):
-        return []
-    result: list[int] = []
-    for value in values:
-        try:
-            result.append(int(value))
-        except (TypeError, ValueError):
-            continue
-    return result
+    return _normalize_int_list_shared(values)
 
 
 def _dedupe_keep_order(values: list[int]) -> list[int]:
@@ -348,4 +341,3 @@ def _as_text_list(value: Any) -> list[str]:
     if isinstance(value, str) and value.strip():
         return [value.strip()]
     return []
-

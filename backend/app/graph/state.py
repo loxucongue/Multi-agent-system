@@ -76,6 +76,13 @@ def int_list_append_reducer(left: list[int] | None, right: list[int] | None) -> 
     return result
 
 
+def int_list_replace_reducer(left: list[int] | None, right: list[int] | None) -> list[int]:
+    """Reducer with explicit replace semantics for id lists."""
+
+    _ = left
+    return list(right or [])
+
+
 def dict_merge_reducer(
     left: dict[str, Any] | None,
     right: dict[str, Any] | None,
@@ -101,7 +108,7 @@ class GraphState(TypedDict):
 
     active_route_id: int | None
     target_route_id: int | None
-    candidate_route_ids: list[int]
+    candidate_route_ids: Annotated[list[int], int_list_replace_reducer]
     excluded_route_ids: list[int]
 
     user_profile: UserProfile
@@ -118,6 +125,9 @@ class GraphState(TypedDict):
 
     tool_results: dict[str, Any] | None
     response_text: str | None
+    response_tokens: list[str] | None
+    response_streamed: bool | None
+    token_emitter: Any | None
 
     ui_actions: Annotated[list[dict[str, Any]], list_append_reducer]
     cards: Annotated[list[dict[str, Any]], list_append_reducer]
@@ -160,6 +170,9 @@ def create_initial_state(
         run_id=run_id,
         tool_results=None,
         response_text=None,
+        response_tokens=None,
+        response_streamed=None,
+        token_emitter=None,
         ui_actions=[],
         cards=[],
         state_patches={},

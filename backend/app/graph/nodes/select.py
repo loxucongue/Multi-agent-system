@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from app.graph.state import GraphState
+from app.graph.utils import to_int_or_none as _to_int_or_none_shared
 from app.utils.logger import get_logger
 
 _LOGGER = get_logger(__name__)
@@ -221,9 +222,4 @@ def _normalize_int_set(values: Any) -> set[int]:
 
 
 def _to_int_or_none(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
+    return _to_int_or_none_shared(value)

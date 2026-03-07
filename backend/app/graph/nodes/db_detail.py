@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.state import GraphState
+from app.graph.utils import normalize_int_list as _normalize_int_list_shared
+from app.graph.utils import to_int_or_none as _to_int_or_none_shared
 from app.services.container import services
 from app.utils.logger import get_logger
 
@@ -18,7 +20,7 @@ async def route_db_detail_node(state: GraphState) -> dict[str, Any]:
     active_route_id = _to_int_or_none(state.get("active_route_id"))
     trace_id = str(state.get("trace_id") or "-")
     existing_tool_results = state.get("tool_results")
-    merged_tool_results = dict(existing_tool_results) if isinstance(existing_tool_results, dict) else {}
+    existing_tool_results = dict(existing_tool_results) if isinstance(existing_tool_results, dict) else {}
 
     route_service = _resolve_route_service()
     batch_rows = await route_service.get_routes_batch(candidate_route_ids) if candidate_route_ids else []
@@ -43,13 +45,24 @@ async def route_db_detail_node(state: GraphState) -> dict[str, Any]:
     route_prices = [{"route_id": item["id"], "pricing": item.get("pricing")} for item in ordered_details]
     route_schedules = [{"route_id": item["id"], "schedule": item.get("schedule")} for item in ordered_details]
 
-    merged_tool_results.update(
-        {
-            "route_details": ordered_details,
-            "route_prices": route_prices,
-            "route_schedules": route_schedules,
-        }
-    )
+    # Keep only keys that are still meaningful for downstream fallback text/audit.
+    preserved_keys = {
+        "candidates_without_id",
+        "parse_warning",
+        "candidates_filtered_out",
+        "filter_warning",
+        "destination_keywords",
+        "bonus_keywords",
+        "query",
+    }
+    merged_tool_results = {
+        key: value
+        for key, value in existing_tool_results.items()
+        if key in preserved_keys
+    }
+    merged_tool_results["route_details"] = ordered_details
+    merged_tool_results["route_prices"] = route_prices
+    merged_tool_results["route_schedules"] = route_schedules
 
     return {
         "candidate_route_ids": filtered_candidate_ids,
@@ -66,21 +79,8 @@ def _resolve_route_service() -> Any:
 
 
 def _normalize_int_list(values: Any) -> list[int]:
-    if not isinstance(values, list):
-        return []
-
-    normalized: list[int] = []
-    for value in values:
-        parsed = _to_int_or_none(value)
-        if parsed is not None:
-            normalized.append(parsed)
-    return normalized
+    return _normalize_int_list_shared(values)
 
 
 def _to_int_or_none(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
+    return _to_int_or_none_shared(value)

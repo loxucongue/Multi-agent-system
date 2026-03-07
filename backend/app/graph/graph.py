@@ -209,6 +209,13 @@ async def run_graph_streaming(
             run_id=run_id,
         )
         initial_state["session_id"] = session_id
+        
+        async def _emit_token(delta: str) -> None:
+            text = str(delta or "")
+            if text:
+                await _push("token", {"text": text, "node": NODE_RESPONSE})
+
+        initial_state["token_emitter"] = _emit_token
 
         final_state: dict[str, Any] = dict(initial_state)
         async for event in graph.astream(initial_state, stream_mode="updates"):
@@ -223,7 +230,15 @@ async def run_graph_streaming(
                     and "response_text" in node_output
                     and node_output["response_text"]
                 ):
-                    await _push("token", {"text": node_output["response_text"], "node": node_name})
+                    if not bool(node_output.get("response_streamed")):
+                        token_chunks = node_output.get("response_tokens")
+                        if isinstance(token_chunks, list) and token_chunks:
+                            for chunk in token_chunks:
+                                text = str(chunk or "")
+                                if text:
+                                    await _push("token", {"text": text, "node": node_name})
+                        else:
+                            await _push("token", {"text": node_output["response_text"], "node": node_name})
 
                 if node_name == NODE_COLLECT and node_output.get("slots_ready"):
                     await _push("interim", "正在为您匹配线路，请稍等...")

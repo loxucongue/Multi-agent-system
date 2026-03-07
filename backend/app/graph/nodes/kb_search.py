@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from app.graph.state import GraphState
+from app.graph.utils import ensure_profile as _ensure_profile_shared
+from app.graph.utils import normalize_history as _normalize_history_shared
+from app.graph.utils import resolve_llm_client as _resolve_llm_client_shared
 from app.models.schemas import UserProfile
 from app.prompts.kb_query_gen import build_kb_query_gen_prompt
 from app.prompts.kb_result_eval import build_kb_result_eval_prompt
@@ -108,18 +111,11 @@ def _resolve_search_services() -> tuple[Any, Any]:
 
 
 def _resolve_llm_client() -> tuple[LLMClient, bool]:
-    try:
-        return services.llm_client, False
-    except Exception:
-        return LLMClient(), True
+    return _resolve_llm_client_shared()
 
 
 def _ensure_profile(value: Any) -> UserProfile:
-    if isinstance(value, UserProfile):
-        return value
-    if isinstance(value, dict):
-        return UserProfile.model_validate(value)
-    return UserProfile()
+    return _ensure_profile_shared(value)
 
 
 async def _generate_route_query(
@@ -285,19 +281,7 @@ def _summarize_candidates(candidates: list[dict[str, Any]]) -> str:
 
 
 def _normalize_history(value: Any) -> list[dict[str, str]]:
-    if not isinstance(value, list):
-        return []
-
-    normalized: list[dict[str, str]] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        user = str(item.get("user") or "").strip()
-        assistant = str(item.get("assistant") or "").strip()
-        if not user and not assistant:
-            continue
-        normalized.append({"user": user, "assistant": assistant})
-    return normalized
+    return _normalize_history_shared(value)
 
 
 def _hot_route_to_candidate(route_card: Any) -> dict[str, Any]:

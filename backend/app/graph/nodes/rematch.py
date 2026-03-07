@@ -6,9 +6,10 @@ import re
 from typing import Any
 
 from app.graph.state import GraphState, STAGE_REMATCH_COLLECTING
+from app.graph.utils import normalize_int_list as _normalize_int_list_shared
+from app.graph.utils import resolve_llm_client as _resolve_llm_client_shared
+from app.graph.utils import to_int_or_none as _to_int_or_none_shared
 from app.prompts.rematch_confirm import build_rematch_confirm_prompt
-from app.services.container import services
-from app.services.llm_client import LLMClient
 from app.utils.logger import get_logger
 
 _LOGGER = get_logger(__name__)
@@ -77,11 +78,8 @@ async def _is_confirmed_rematch(user_message: str) -> bool:
     return _fallback_confirm_rematch(user_message)
 
 
-def _resolve_llm_client() -> tuple[LLMClient, bool]:
-    try:
-        return services.llm_client, False
-    except Exception:
-        return LLMClient(), True
+def _resolve_llm_client() -> tuple[object, bool]:
+    return _resolve_llm_client_shared()
 
 
 def _fallback_confirm_rematch(user_message: str) -> bool:
@@ -92,20 +90,8 @@ def _fallback_confirm_rematch(user_message: str) -> bool:
 
 
 def _normalize_int_list(values: Any) -> list[int]:
-    if not isinstance(values, list):
-        return []
-    normalized: list[int] = []
-    for value in values:
-        parsed = _to_int_or_none(value)
-        if parsed is not None and parsed not in normalized:
-            normalized.append(parsed)
-    return normalized
+    return _normalize_int_list_shared(values, dedupe=True)
 
 
 def _to_int_or_none(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
+    return _to_int_or_none_shared(value)

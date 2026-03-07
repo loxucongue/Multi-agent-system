@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from app.graph.state import GraphState
+from app.graph.utils import to_int_or_none as _to_int_or_none_shared
 from app.services.container import services
 
 
@@ -200,9 +201,4 @@ def _build_db_query_summary(tool_results: dict[str, Any]) -> str | None:
 
 
 def _to_int_or_none(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
+    return _to_int_or_none_shared(value)

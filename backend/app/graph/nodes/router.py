@@ -7,10 +7,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.graph.state import GraphState, STAGE_REMATCH_COLLECTING
+from app.graph.utils import ensure_profile as _ensure_profile_shared
+from app.graph.utils import normalize_history as _normalize_history_shared
+from app.graph.utils import normalize_int_list as _normalize_int_list_shared
+from app.graph.utils import resolve_llm_client as _resolve_llm_client_shared
+from app.graph.utils import to_int_or_none as _to_int_or_none_shared
 from app.models.schemas import UserProfile
 from app.prompts.intent_classification import build_intent_prompt
 from app.services.container import services
-from app.services.llm_client import LLMClient
 from app.utils.logger import get_logger
 
 _LOGGER = get_logger(__name__)
@@ -210,11 +214,8 @@ async def router_intent_node(state: GraphState) -> dict[str, Any]:
     }
 
 
-def _resolve_llm_client() -> tuple[LLMClient, bool]:
-    try:
-        return services.llm_client, False
-    except Exception:
-        return LLMClient(), True
+def _resolve_llm_client() -> tuple[object, bool]:
+    return _resolve_llm_client_shared()
 
 
 def _state_for_prompt(state: GraphState) -> dict[str, Any]:
@@ -233,17 +234,7 @@ async def _build_history(context_turns: list[dict[str, str]]) -> list[dict[str, 
         limit = 5
     limit = max(1, limit)
     turns = context_turns[-limit:]
-    history: list[dict[str, str]] = []
-    for turn in turns:
-        if not isinstance(turn, dict):
-            continue
-        history.append(
-            {
-                "user": str(turn.get("user", "")),
-                "assistant": str(turn.get("assistant", "")),
-            }
-        )
-    return history
+    return _normalize_history_shared(turns)
 
 
 def _normalize_intent(value: Any) -> str | None:
@@ -516,29 +507,12 @@ def _has_overseas_country_in_message(message: str) -> bool:
 
 
 def _normalize_int_list(values: Any) -> list[int]:
-    if not isinstance(values, list):
-        return []
-
-    result: list[int] = []
-    for value in values:
-        parsed = _to_int_or_none(value)
-        if parsed is not None:
-            result.append(parsed)
-    return result
+    return _normalize_int_list_shared(values)
 
 
 def _to_int_or_none(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
+    return _to_int_or_none_shared(value)
 
 
 def _ensure_user_profile(value: Any) -> UserProfile:
-    if isinstance(value, UserProfile):
-        return value
-    if isinstance(value, dict):
-        return UserProfile.model_validate(value)
-    return UserProfile()
+    return _ensure_profile_shared(value)
