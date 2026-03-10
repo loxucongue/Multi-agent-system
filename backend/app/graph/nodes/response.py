@@ -376,6 +376,7 @@ def _route_detail_matches_destinations(detail: dict[str, Any], destinations: lis
         str(detail.get("name") or ""),
         str(detail.get("summary") or ""),
         str(detail.get("base_info") or ""),
+        str(detail.get("features") or ""),
         " ".join(str(tag) for tag in detail.get("tags", []) if str(tag).strip())
         if isinstance(detail.get("tags"), list)
         else "",
