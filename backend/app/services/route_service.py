@@ -135,6 +135,8 @@ class RouteService:
                     itinerary_json=route.itinerary_json,
                     notice=route.notice,
                     included=route.included,
+                    features=route.features,
+                    cost_excluded=route.cost_excluded,
                     doc_url=route.doc_url,
                     is_hot=route.is_hot,
                     sort_weight=route.sort_weight,
