@@ -54,6 +54,7 @@ async def route_db_detail_node(state: GraphState) -> dict[str, Any]:
         "destination_keywords",
         "bonus_keywords",
         "query",
+        "select_reasoning",
     }
     merged_tool_results = {
         key: value

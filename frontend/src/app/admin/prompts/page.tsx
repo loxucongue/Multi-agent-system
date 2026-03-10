@@ -20,14 +20,15 @@ interface PromptVersion {
 }
 
 const NODE_DESCRIPTIONS: Record<string, string> = {
-  intent_classification: "意图识别：判断用户本轮问题属于推荐、追问、签证、对比等哪一类。",
-  requirement_collection: "需求收集：补齐目的地、天数、预算等槽位，决定是否进入检索。",
-  response_generation: "回复生成：基于工具结果生成最终面向用户的自然语言答案。",
-  chitchat: "闲聊回复：处理非业务闲聊并自然引导回旅游咨询。",
-  compare_style: "对比风格判断：为线路对比推断行程节奏（紧凑/轻松等）。",
-  kb_query_gen: "检索词生成：根据画像与上下文生成更精准的知识库查询词。",
-  kb_result_eval: "检索结果评估：判断知识库返回结果是否与用户需求相关。",
-  visa_result_eval: "签证结果评估：判断签证检索结果是否命中目标国家与问题。",
+  intent_classification: "意图分类：识别推荐/追问/签证/价格/对比等意图。",
+  requirement_collection: "需求收集：补齐目的地、天数、预算等槽位。",
+  response_generation: "回复生成：基于工具结果产出最终回复文本。",
+  chitchat: "闲聊处理：礼貌回复并引导回旅游咨询。",
+  compare_style: "对比风格：推断行程节奏（紧凑/轻松/自由）。",
+  kb_query_gen: "检索词生成：为路线知识库生成高质量 query。",
+  kb_result_eval: "路线评估：判断路线检索结果是否相关。",
+  visa_result_eval: "签证评估：判断签证检索结果是否相关。",
+  route_select: "候选筛选：从候选线路中语义筛选最匹配的 1~3 条。",
 };
 
 const getNodeDescription = (nodeName: string): string =>
@@ -211,14 +212,7 @@ export default function AdminPromptsPage() {
                 >
                   <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
                     <span style={{ fontWeight: 600 }}>{name}</span>
-                    <span
-                      style={{
-                        fontSize: 12,
-                        opacity: active ? 0.9 : 0.75,
-                        whiteSpace: "normal",
-                        lineHeight: 1.35,
-                      }}
-                    >
+                    <span style={{ fontSize: 12, opacity: active ? 0.9 : 0.75, whiteSpace: "normal", lineHeight: 1.35 }}>
                       {getNodeDescription(name)}
                     </span>
                   </div>

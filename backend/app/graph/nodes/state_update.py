@@ -193,7 +193,33 @@ def _extract_topk_results(state: GraphState, tool_results: dict[str, Any]) -> An
     if isinstance(state_topk, (list, dict)):
         return state_topk
 
-    for key in ("candidates", "route_details", "compare_data", "sources"):
+    candidates = tool_results.get("candidates")
+    if isinstance(candidates, list) and candidates:
+        return candidates
+
+    route_details = tool_results.get("route_details")
+    if isinstance(route_details, list) and route_details:
+        return route_details
+
+    candidates_filtered_out = tool_results.get("candidates_filtered_out")
+    if isinstance(candidates_filtered_out, list) and candidates_filtered_out:
+        return {
+            "kind": "candidates_filtered_out",
+            "items": candidates_filtered_out,
+            "destination_keywords": tool_results.get("destination_keywords"),
+            "bonus_keywords": tool_results.get("bonus_keywords"),
+            "filter_warning": tool_results.get("filter_warning"),
+        }
+
+    candidates_without_id = tool_results.get("candidates_without_id")
+    if isinstance(candidates_without_id, list) and candidates_without_id:
+        return {
+            "kind": "candidates_without_id",
+            "items": candidates_without_id,
+            "parse_warning": tool_results.get("parse_warning"),
+        }
+
+    for key in ("compare_data", "sources"):
         if key in tool_results:
             return tool_results.get(key)
     return None

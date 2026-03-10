@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any
 
@@ -158,7 +159,21 @@ def _extract_output_payload(response_data: dict[str, Any] | None) -> Any:
         return None
 
     if "data" in response_data:
-        return response_data.get("data")
+        return _maybe_json(response_data.get("data"))
     if "output" in response_data:
-        return response_data.get("output")
+        return _maybe_json(response_data.get("output"))
     return response_data
+
+
+def _maybe_json(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text:
+        return value
+    if not ((text.startswith("{") and text.endswith("}")) or (text.startswith("[") and text.endswith("]"))):
+        return value
+    try:
+        return json.loads(text)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return value
