@@ -294,6 +294,8 @@ class RouteDetail(BaseModel):
     itinerary_json: Any
     notice: str
     included: str
+    features: str | None = None
+    cost_excluded: str | None = None
     doc_url: str
     is_hot: bool
     sort_weight: int
@@ -349,6 +351,8 @@ class RouteBatchItem(BaseModel):
     itinerary_json: Any
     notice: str
     included: str
+    features: str | None = None
+    cost_excluded: str | None = None
     doc_url: str
     is_hot: bool
     sort_weight: int
