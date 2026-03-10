@@ -330,6 +330,7 @@ def _to_route_card(detail: dict[str, Any]) -> dict[str, Any]:
         "tags": detail.get("tags") if isinstance(detail.get("tags"), list) else [],
         "doc_url": detail.get("doc_url"),
         "highlights": str(detail.get("highlights") or ""),
+        "features": str(detail.get("features") or ""),
     }
 
 
