@@ -267,6 +267,8 @@ def _serialize_route_for_ai(item: RouteBatchItem, title: str) -> str:
     base_info = str(item.base_info or "").strip() or "暂无"
     included = _truncate_text(item.included, 300) or "暂无"
     notice = _truncate_text(item.notice, 300) or "暂无"
+    features = str(item.features or "").strip() or "暂无"
+    cost_excluded = _truncate_text(item.cost_excluded, 300) or "暂无"
     itinerary = _truncate_text(_stringify_json_like(item.itinerary_json), 500) or "暂无"
     schedule = _truncate_text(_stringify_json_like(item.schedule.schedules_json if item.schedule else None), 300) or "暂无"
     return (
@@ -279,6 +281,8 @@ def _serialize_route_for_ai(item: RouteBatchItem, title: str) -> str:
         f"- 行程: {itinerary}\n"
         f"- 费用包含: {included}\n"
         f"- 注意事项: {notice}\n"
+        f"- 线路特色: {features}\n"
+        f"- 费用不含: {cost_excluded}\n"
         f"- 价格区间: {_format_price_range(item)}\n"
         f"- 团期信息: {schedule}"
     )
