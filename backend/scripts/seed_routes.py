@@ -89,15 +89,15 @@ def _to_tags(rag_abstract: Any) -> list[str]:
     return deduped
 
 
-def _to_itinerary_json(itinerary_days: Any) -> list[dict[str, Any]]:
+def _to_itinerary_json(itinerary_days: Any) -> dict[str, Any]:
     text = _as_text(itinerary_days)
     if not text:
-        return [{"day": 1, "content": "暂无行程信息"}]
+        return {"days": [{"day": 1, "content": "暂无行程信息"}]}
 
     marker_pattern = re.compile(r"(第\s*(\d+)\s*天|Day\s*(\d+))", re.IGNORECASE)
     matches = list(marker_pattern.finditer(text))
     if not matches:
-        return [{"day": 1, "content": text}]
+        return {"days": [{"day": 1, "content": text}]}
 
     segments: list[dict[str, Any]] = []
     for idx, match in enumerate(matches):
@@ -116,7 +116,7 @@ def _to_itinerary_json(itinerary_days: Any) -> list[dict[str, Any]]:
             }
         )
 
-    return segments or [{"day": 1, "content": text}]
+    return {"days": segments} if segments else {"days": [{"day": 1, "content": text}]}
 
 
 def _to_decimal(value: str) -> Decimal:
