@@ -137,6 +137,10 @@ class PromptVersion(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    traffic_weight: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=100, server_default="100",
+        comment="A/B test traffic weight 0-100",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
 
@@ -162,9 +166,15 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    trace_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    trace_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     run_id: Mapped[str] = mapped_column(String(50), nullable=False)
-    session_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    session_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    parent_span_id: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, comment="Parent span for tree structure",
+    )
+    span_type: Mapped[str | None] = mapped_column(
+        String(30), nullable=True, comment="root|node|llm_call|coze_call",
+    )
     intent: Mapped[str] = mapped_column(String(50), nullable=False)
     search_query: Mapped[str | None] = mapped_column(Text, nullable=True)
     topk_results: Mapped[Any | None] = mapped_column(JSON, nullable=True)
@@ -177,6 +187,13 @@ class AuditLog(Base):
     error_stack: Mapped[str | None] = mapped_column(Text, nullable=True)
     coze_logid: Mapped[str | None] = mapped_column(String(100), nullable=True)
     coze_debug_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    prompt_version_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="Prompt version used for A/B tracking",
+    )
+    is_degraded: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0",
+        comment="Whether this request used degraded/fallback path",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
 

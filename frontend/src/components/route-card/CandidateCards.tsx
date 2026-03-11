@@ -15,17 +15,23 @@ interface CandidateCardsProps {
   loading?: boolean;
 }
 
-const formatPriceRange = (card: RouteCard): string => {
-  if (card.price_min === null && card.price_max === null) {
-    return "价格待更新";
+const deriveDays = (summary: string): number => {
+  const match = summary.match(/(\d{1,2})\s*天/);
+  if (!match) {
+    return 0;
   }
-  if (card.price_min !== null && card.price_max !== null) {
-    return `¥${card.price_min} - ¥${card.price_max}`;
+  return Number(match[1]);
+};
+
+const deriveHighlights = (summary: string): string[] => {
+  const parts = summary
+    .split(/[，。；,;.!?\n]+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 3);
+  if (parts.length === 0) {
+    return ["行程亮点待确认"];
   }
-  if (card.price_min !== null) {
-    return `¥${card.price_min} 起`;
-  }
-  return `最高 ¥${card.price_max}`;
+  return parts.slice(0, 5);
 };
 
 export default function CandidateCards({ cards, onSelect, onCompare, onGuideRematch, loading = false }: CandidateCardsProps) {
@@ -59,9 +65,9 @@ export default function CandidateCards({ cards, onSelect, onCompare, onGuideRema
   if (loading) {
     return (
       <div style={{ marginTop: 12 }}>
-        <Space wrap size={[12, 12]} style={{ width: "100%" }}>
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
           {[0, 1, 2].map((index) => (
-            <Card key={index} style={{ width: 280 }}>
+            <Card key={index} style={{ width: "100%" }}>
               <Skeleton active paragraph={{ rows: 4 }} />
             </Card>
           ))}
@@ -85,34 +91,54 @@ export default function CandidateCards({ cards, onSelect, onCompare, onGuideRema
 
   return (
     <div style={{ marginTop: 12 }}>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, paddingBottom: 72 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: 72 }}>
         {cards.map((card) => {
           const checked = selectedRouteIds.includes(card.id);
+          const days = deriveDays(card.summary);
+          const highlights = deriveHighlights(card.summary);
           return (
-            <Card
-              key={card.id}
-              style={{ width: 280 }}
-              title={
-                <Space size={8}>
+            <Card key={card.id} style={{ width: "100%" }}>
+              <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                <Space size={8} align="center">
                   <Checkbox checked={checked} onChange={(event) => toggleSelection(card.id, event.target.checked)} />
-                  <Title level={5} style={{ margin: 0, maxWidth: 200 }}>
+                  <Text>加入对比</Text>
+                </Space>
+
+                <Space size={8} align="start" style={{ justifyContent: "space-between", width: "100%" }}>
+                  <Title level={5} style={{ margin: 0, maxWidth: "78%" }}>
                     {card.name}
                   </Title>
+                  <Tag color="blue">候选方案</Tag>
                 </Space>
-              }
-            >
-              <Space direction="vertical" size={10} style={{ width: "100%" }}>
-                <Paragraph ellipsis={{ rows: 2, tooltip: card.summary }} style={{ minHeight: 44, marginBottom: 0 }}>
-                  {card.summary}
-                </Paragraph>
 
-                <div>
-                  {card.tags.map((tag) => (
-                    <Tag key={`${card.id}-${tag}`}>{tag}</Tag>
-                  ))}
+                <Text type="secondary">供应商：平台精选 · 天数：{days}天</Text>
+
+                <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 8 }}>
+                  <Text strong>亮点</Text>
+                  <ul style={{ margin: "8px 0 0 18px", padding: 0 }}>
+                    {highlights.map((highlight) => (
+                      <li key={`${card.id}-${highlight}`} style={{ marginBottom: 4 }}>
+                        {highlight}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
 
-                <Text strong>{formatPriceRange(card)}</Text>
+                <div>
+                  <Text strong>标签</Text>
+                  <div style={{ marginTop: 8 }}>
+                    {card.tags.map((tag) => (
+                      <Tag key={`${card.id}-${tag}`}>{tag}</Tag>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <Text strong>摘要</Text>
+                  <Paragraph ellipsis={{ rows: 3, tooltip: card.summary }} style={{ marginBottom: 0, marginTop: 8 }}>
+                    {card.summary}
+                  </Paragraph>
+                </div>
 
                 <Button block onClick={() => onSelect(card.id)}>
                   查看详情

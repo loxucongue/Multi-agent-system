@@ -1,4 +1,4 @@
-"""LLM-based candidate selection node."""
+"""LLM-based candidate selection node with rule-based scoring pre-filter."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from app.graph.utils import normalize_history as _normalize_history_shared
 from app.graph.utils import resolve_llm_client as _resolve_llm_client_shared
 from app.graph.utils import to_int_or_none as _to_int_or_none_shared
 from app.models.schemas import UserProfile
+from app.services.circuit_breaker import degradation_policy
 from app.services.llm_client import LLMClient
 from app.services.prompt_defaults import DEFAULT_PROMPTS
 from app.services.prompt_service import get_active_prompt
@@ -21,6 +22,8 @@ _LOGGER = get_logger(__name__)
 _SELECT_PROMPT_NODE_NAME = "route_select"
 
 _MAX_CANDIDATES_TO_LLM = 10
+_SCORE_THRESHOLD_SKIP_LLM = 7
+_TOP_N_FOR_LLM = 5
 _SELECT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -69,7 +72,12 @@ _SELECT_SYSTEM_PROMPT = """# 角色
 
 
 async def select_candidates_node(state: GraphState) -> dict[str, Any]:
-    """Select candidate route ids with LLM structured output."""
+    """Select candidate route ids with rule-based scoring + optional LLM refinement.
+
+    Optimization: compute a rule-based match score per candidate first.
+    If top candidate scores >= _SCORE_THRESHOLD_SKIP_LLM, skip LLM entirely.
+    Otherwise send Top-N to LLM for refined selection.
+    """
 
     tool_results = state.get("tool_results")
     tool_results_dict = dict(tool_results) if isinstance(tool_results, dict) else {}
@@ -100,11 +108,37 @@ async def select_candidates_node(state: GraphState) -> dict[str, Any]:
             },
         }
 
-    llm_input_candidates = filtered_candidates[:_MAX_CANDIDATES_TO_LLM]
-    valid_ids = {item["route_id"] for item in llm_input_candidates}
-
     user_profile = _ensure_user_profile(state.get("user_profile"))
     user_message = str(state.get("current_user_message") or "")
+
+    scored_candidates = _score_candidates(filtered_candidates, user_profile, user_message)
+    scored_candidates.sort(key=lambda x: x[1], reverse=True)
+
+    top_score = scored_candidates[0][1] if scored_candidates else 0
+    _LOGGER.info(
+        "select rule_scores top=%s count=%s",
+        top_score,
+        len(scored_candidates),
+    )
+
+    if top_score >= _SCORE_THRESHOLD_SKIP_LLM or not degradation_policy.llm_available:
+        selected_ids = [item[0]["route_id"] for item in scored_candidates[:3] if item[1] > 0]
+        reasoning = f"规则评分命中（top_score={top_score}），跳过LLM"
+        if not degradation_policy.llm_available:
+            reasoning = f"LLM降级，规则评分选择（top_score={top_score}）"
+        active_route_id = selected_ids[0] if selected_ids else None
+        return {
+            "candidate_route_ids": selected_ids,
+            "active_route_id": active_route_id,
+            "tool_results": {
+                **tool_results_dict,
+                "select_reasoning": reasoning,
+            },
+        }
+
+    llm_input_candidates = [item[0] for item in scored_candidates[:_TOP_N_FOR_LLM]]
+    valid_ids = {item["route_id"] for item in llm_input_candidates}
+
     conversation_history = _build_conversation_history(state)
     user_prompt = _build_select_user_prompt(
         user_profile=user_profile.model_dump(),
@@ -128,6 +162,7 @@ async def select_candidates_node(state: GraphState) -> dict[str, Any]:
             json_schema=_SELECT_SCHEMA,
             temperature=0.1,
         )
+        degradation_policy.llm_breaker.record_success()
 
         raw_ids = result.get("selected_route_ids") or []
         reasoning = str(result.get("reasoning") or "").strip()
@@ -145,13 +180,10 @@ async def select_candidates_node(state: GraphState) -> dict[str, Any]:
             reasoning[:200],
         )
     except Exception as exc:
-        _LOGGER.exception("select llm failed, fallback to keyword select: %s", exc)
-        selected_ids = _fallback_keyword_select(
-            candidates=llm_input_candidates,
-            user_profile=user_profile.model_dump(),
-            user_message=user_message,
-        )
-        reasoning = f"LLM fallback: keyword select route_ids={selected_ids}"
+        degradation_policy.llm_breaker.record_failure()
+        _LOGGER.exception("select llm failed, fallback to rule scores: %s", exc)
+        selected_ids = [item[0]["route_id"] for item in scored_candidates[:3] if item[1] > 0]
+        reasoning = f"LLM fallback: rule_score select route_ids={selected_ids}"
         llm_record = {
             "node": "select",
             "status": "fallback",
@@ -161,6 +193,16 @@ async def select_candidates_node(state: GraphState) -> dict[str, Any]:
     finally:
         if should_close:
             await llm_client.aclose()
+
+    if not selected_ids:
+        destination_only_ids = _select_by_destination_only(
+            candidates=[item[0] for item in scored_candidates],
+            user_profile=user_profile.model_dump(),
+        )
+        if destination_only_ids:
+            selected_ids = destination_only_ids
+            destination_reasoning = "目的地兜底命中：候选中包含用户目的地关键词，已放宽其他条件。"
+            reasoning = f"{reasoning}；{destination_reasoning}" if reasoning else destination_reasoning
 
     active_route_id = selected_ids[0] if selected_ids else None
 
@@ -175,6 +217,84 @@ async def select_candidates_node(state: GraphState) -> dict[str, Any]:
     if llm_record is not None:
         payload["llm_calls"] = [llm_record]
     return payload
+
+
+def _score_candidates(
+    candidates: list[dict[str, Any]],
+    profile: UserProfile,
+    user_message: str,
+) -> list[tuple[dict[str, Any], int]]:
+    """Rule-based multi-dimension scoring: destination +3, days +2, budget +2, style +1."""
+
+    destinations = [str(d).strip().lower() for d in (profile.destinations or []) if str(d).strip()]
+    if not destinations:
+        destinations = _extract_destinations_from_text(user_message)
+
+    days_range_str = str(profile.days_range or "").strip()
+    budget_range_str = str(profile.budget_range or "").strip()
+    style_prefs = [str(s).strip().lower() for s in (profile.style_prefs or []) if str(s).strip()]
+    people = str(profile.people or "").strip().lower()
+
+    scored: list[tuple[dict[str, Any], int]] = []
+    for candidate in candidates:
+        score = 0
+        text = " ".join([
+            str(candidate.get("name") or ""),
+            str(candidate.get("summary") or ""),
+            str(candidate.get("output") or ""),
+            " ".join(str(tag) for tag in (candidate.get("tags") or []) if str(tag).strip()),
+        ]).lower()
+
+        if destinations and any(d in text for d in destinations):
+            score += 3
+
+        if days_range_str:
+            candidate_days = candidate.get("days")
+            if candidate_days is not None:
+                if _days_in_range(candidate_days, days_range_str):
+                    score += 2
+
+        if budget_range_str:
+            price_range = str(candidate.get("price_range") or "")
+            if price_range and _budget_overlaps(price_range, budget_range_str):
+                score += 2
+
+        if style_prefs and any(s in text for s in style_prefs):
+            score += 1
+        if people and people in text:
+            score += 1
+
+        scored.append((candidate, score))
+    return scored
+
+
+def _days_in_range(candidate_days: Any, days_range: str) -> bool:
+    """Check if candidate days falls within user's requested range."""
+    try:
+        c_days = int(candidate_days)
+    except (TypeError, ValueError):
+        return False
+    nums = re.findall(r"\d+", days_range)
+    if len(nums) >= 2:
+        return int(nums[0]) <= c_days <= int(nums[1])
+    if len(nums) == 1:
+        target = int(nums[0])
+        return abs(c_days - target) <= 2
+    return False
+
+
+def _budget_overlaps(price_range: str, budget_range: str) -> bool:
+    """Check if price range overlaps with user budget range."""
+    price_nums = re.findall(r"\d+", price_range.replace(",", ""))
+    budget_nums = re.findall(r"\d+", budget_range.replace(",", ""))
+    if not price_nums or not budget_nums:
+        return False
+    try:
+        p_min, p_max = int(price_nums[0]), int(price_nums[-1])
+        b_min, b_max = int(budget_nums[0]), int(budget_nums[-1])
+        return p_min <= b_max and b_min <= p_max
+    except (ValueError, IndexError):
+        return False
 
 
 def _exclude_candidates(candidates: list[dict[str, Any]], excluded_ids: set[int]) -> list[dict[str, Any]]:
@@ -265,6 +385,40 @@ def _fallback_keyword_select(
 
     scored.sort(key=lambda item: item[1], reverse=True)
     return [route_id for route_id, _ in scored[:3]]
+
+
+def _select_by_destination_only(
+    candidates: list[dict[str, Any]],
+    user_profile: dict[str, Any],
+) -> list[int]:
+    """Select up to 3 routes by destination-only matching."""
+
+    destinations = user_profile.get("destinations")
+    if not isinstance(destinations, list):
+        return []
+    destination_keywords = [str(item).strip().lower() for item in destinations if str(item).strip()]
+    if not destination_keywords:
+        return []
+
+    selected: list[int] = []
+    for candidate in candidates:
+        route_id = _safe_int(candidate.get("route_id"))
+        if route_id is None:
+            continue
+        text = " ".join(
+            [
+                str(candidate.get("name") or ""),
+                str(candidate.get("summary") or ""),
+                str(candidate.get("output") or ""),
+                " ".join(str(tag) for tag in (candidate.get("tags") or []) if str(tag).strip()),
+            ]
+        ).lower()
+        if any(keyword in text for keyword in destination_keywords):
+            selected.append(route_id)
+        if len(selected) >= 3:
+            break
+
+    return selected
 
 
 def _extract_destinations_from_text(text: str) -> list[str]:

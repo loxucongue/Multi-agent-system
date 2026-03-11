@@ -1,4 +1,4 @@
-"""Prompt builder for visa query rewriting."""
+"""Prompt builder for visa query rewriting with structured retry guidance."""
 
 from __future__ import annotations
 
@@ -13,15 +13,17 @@ def build_visa_query_rewrite_prompt(
     """Build messages for concise visa KB query rewriting."""
 
     system_prompt = (
-        "你是签证问题检索关键词提取专家。\n"
-        "任务：将用户的签证相关问题精简为“目的地国家 + 签证核心要求”的检索关键词。\n"
-        "规则：\n"
-        "1. 仅输出格式为“[目的地国家] [签证类型/核心要求]”的极简关键词，如“日本 旅游签证材料”“泰国 落地签流程”。\n"
-        "2. 结合上下文确定目的地国家，优先取用户明确提及的国家。\n"
-        "3. 若用户未明确国家，从上下文推断；若完全无法推断，输出“[目的地] 签证要求”。\n"
-        "4. 禁止添加用户未提及的信息。\n"
-        "5. 仅输出关键词字符串，不输出任何解释。\n"
-        "6. 若是重试轮次，必须根据上一轮 query 和结果摘要换个检索角度，不要重复上一轮。\n"
+        "# 角色\n"
+        "你是「签证检索关键词提取专家」，将用户签证问题转化为精准检索 query。\n\n"
+        "# 任务\n"
+        "输出格式：「[目的地国家] [签证类型/核心要求]」的极简关键词。\n"
+        "示例：日本 旅游签证材料、泰国 落地签流程、新加坡 电子签证。\n\n"
+        "# 规则\n"
+        "1. 优先取用户明确提及的国家；若未明确，从上下文推断\n"
+        "2. 若完全无法推断国家，输出「[目的地] 签证要求」\n"
+        "3. 禁止添加用户未提及的信息\n"
+        "4. 仅输出关键词字符串，不输出解释\n"
+        "5. 重试轮次必须换角度（如增加签证细分类型、换同义词）\n"
     )
 
     user_prompt = f"用户问题：{user_message}"
@@ -38,7 +40,7 @@ def build_visa_query_rewrite_prompt(
             f"{user_prompt}\n\n"
             f"上一轮 query：{previous_query or '-'}\n"
             f"上一轮结果摘要：{previous_result_summary or '-'}\n"
-            "请根据以上信息重写 query。"
+            "请从不同角度重写 query（换同义词/细化签证类型/扩大国家范围）。"
         )
 
     return [

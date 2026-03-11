@@ -1,4 +1,4 @@
-"""Router node: classify user intent and update routing-related state fields."""
+"""Router node: three-stage waterfall intent classifier with rule-first optimization."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from app.graph.utils import resolve_llm_client as _resolve_llm_client_shared
 from app.graph.utils import to_int_or_none as _to_int_or_none_shared
 from app.models.schemas import UserProfile
 from app.prompts.intent_classification import build_intent_prompt
+from app.services.circuit_breaker import degradation_policy
 from app.services.container import services
 from app.utils.logger import get_logger
 
@@ -108,6 +109,79 @@ _INTENT_OUTPUT_SCHEMA: dict[str, Any] = {
     },
 }
 
+# ─────────────────────────────────────────────
+#  Stage 1: High-confidence fast rules
+# ─────────────────────────────────────────────
+
+_FAST_RULES: list[tuple[re.Pattern[str], str, float]] = [
+    (re.compile(r"第\s*[0-9一二三四五六七八九十]+\s*条"), "route_followup", 0.95),
+    (re.compile(r"(多少钱|价格|报价|团期)"), "price_schedule", 0.92),
+    (re.compile(r"(签证|出签|拒签)"), "visa", 0.93),
+    (re.compile(r"(换一批|重新推荐|再来几条)"), "rematch", 0.95),
+    (re.compile(r"(对比|比较|哪个好|哪条好)"), "compare", 0.93),
+    (re.compile(r"^(你好|嗨|hi|hello|谢谢|再见|拜拜|早上好|晚上好|下午好)"), "chitchat", 0.90),
+    (re.compile(r"(天气|航班|机票|高铁)"), "external_info", 0.91),
+]
+
+_FAST_CONFIDENCE_THRESHOLD = 0.90
+
+
+def _stage1_fast_rules(user_message: str) -> tuple[str | None, float, str | None]:
+    """Stage 1: pattern-match high-confidence rules. Returns (intent, confidence, matched_pattern)."""
+
+    for pattern, intent, confidence in _FAST_RULES:
+        if pattern.search(user_message):
+            return intent, confidence, pattern.pattern
+    return None, 0.0, None
+
+
+# ─────────────────────────────────────────────
+#  Stage 2: Context-aware rule inference
+# ─────────────────────────────────────────────
+
+_DESTINATION_PATTERN = re.compile(
+    r"(想去|去|到|飞|玩)\s*([\u4e00-\u9fa5A-Za-z]{2,12})"
+)
+_DAYS_PATTERN = re.compile(r"\d+\s*(天|日|晚)")
+_BUDGET_PATTERN = re.compile(r"\d+\s*(万|w|k|元|块|千)", re.IGNORECASE)
+_DATE_PATTERN = re.compile(r"(\d{1,2}\s*月|\d{4}年|五一|国庆|春节|元旦|暑假|寒假|清明|端午)")
+_PEOPLE_PATTERN = re.compile(r"(\d+\s*(个人|人|位|口)|一家|夫妻|情侣|闺蜜|朋友)")
+_QUESTION_STARTERS = re.compile(r"^(怎么|什么|哪|几|多少|多久|有没有|能不能|可以)")
+
+
+def _stage2_context_rules(
+    user_message: str,
+    stage: str,
+    user_profile: UserProfile,
+    candidate_route_ids: list[int],
+    active_route_id: int | None,
+) -> tuple[str | None, float, str]:
+    """Stage 2: context + state-aware inference. Returns (intent, confidence, reasoning)."""
+
+    has_destination = bool(_DESTINATION_PATTERN.search(user_message))
+    has_days = bool(_DAYS_PATTERN.search(user_message))
+    has_budget = bool(_BUDGET_PATTERN.search(user_message))
+    has_date = bool(_DATE_PATTERN.search(user_message))
+    has_people = bool(_PEOPLE_PATTERN.search(user_message))
+    dimension_count = sum([has_destination, has_days, has_budget, has_date, has_people])
+
+    if stage == "collecting" and dimension_count >= 1:
+        if has_destination or dimension_count >= 2:
+            return "route_recommend", 0.88, "collecting_stage_with_dimensions"
+
+    if stage == "recommended":
+        if _QUESTION_STARTERS.search(user_message) and (active_route_id is not None or candidate_route_ids):
+            if not has_destination:
+                return "route_followup", 0.85, "recommended_stage_question"
+
+        if _contains_any(user_message, _FOLLOWUP_DETAIL_KEYWORDS) and active_route_id is not None:
+            return "route_followup", 0.87, "recommended_stage_detail_keyword"
+
+    if has_destination and not has_days and not has_budget and stage == "init":
+        return "route_recommend", 0.82, "init_with_destination"
+
+    return None, 0.0, ""
+
 
 @dataclass
 class _FallbackDecision:
@@ -115,23 +189,74 @@ class _FallbackDecision:
     request_human: bool = False
 
 
+@dataclass
+class _RouterResult:
+    intent: str
+    secondary_intent: str | None
+    extracted_entities: dict[str, Any]
+    reasoning: str
+    source: str
+    confidence: float
+
+
 async def router_intent_node(state: GraphState) -> dict[str, Any]:
-    """Classify intent and return GraphState patch for downstream nodes."""
+    """Three-stage waterfall: fast rules → context rules → LLM classify."""
 
     user_message = str(state.get("current_user_message") or "").strip()
     history = await _build_history(state.get("context_turns", []))
     current_profile = _ensure_user_profile(state.get("user_profile"))
     candidate_route_ids = _normalize_int_list(state.get("candidate_route_ids", []))
     active_route_id = _to_int_or_none(state.get("active_route_id"))
+    current_stage = str(state.get("stage") or "init")
 
     request_human = _contains_any(user_message, _HUMAN_KEYWORDS)
-    intent = "route_recommend"
-    secondary_intent: str | None = None
-    extracted_entities_raw: Any = {}
-    reasoning = ""
-    llm_call_record: dict[str, Any] | None = None
+
+    # ── Stage 1: Fast rules ──
+    s1_intent, s1_confidence, s1_pattern = _stage1_fast_rules(user_message)
+    if s1_intent and s1_confidence >= _FAST_CONFIDENCE_THRESHOLD:
+        result = _RouterResult(
+            intent=s1_intent,
+            secondary_intent=None,
+            extracted_entities={},
+            reasoning=f"fast_rule: {s1_pattern}",
+            source="stage1_fast_rule",
+            confidence=s1_confidence,
+        )
+        _detect_multi_intent_signal(user_message, result)
+        return _finalize_router_output(result, state, current_profile, candidate_route_ids, active_route_id, request_human)
+
+    # ── Stage 2: Context-aware rules ──
+    s2_intent, s2_confidence, s2_reasoning = _stage2_context_rules(
+        user_message, current_stage, current_profile, candidate_route_ids, active_route_id,
+    )
+    if s2_intent and s2_confidence >= 0.80:
+        result = _RouterResult(
+            intent=s2_intent,
+            secondary_intent=None,
+            extracted_entities={},
+            reasoning=f"context_rule: {s2_reasoning}",
+            source="stage2_context_rule",
+            confidence=s2_confidence,
+        )
+        _detect_multi_intent_signal(user_message, result)
+        return _finalize_router_output(result, state, current_profile, candidate_route_ids, active_route_id, request_human)
+
+    # ── Stage 3: LLM classification (with circuit breaker) ──
+    if not degradation_policy.llm_available:
+        fallback = _fallback_intent_by_keywords(user_message)
+        result = _RouterResult(
+            intent=fallback.intent,
+            secondary_intent=None,
+            extracted_entities={},
+            reasoning="llm_circuit_open_fallback",
+            source="degraded_keyword_fallback",
+            confidence=0.6,
+        )
+        request_human = request_human or fallback.request_human
+        return _finalize_router_output(result, state, current_profile, candidate_route_ids, active_route_id, request_human)
 
     llm_client, should_close = _resolve_llm_client()
+    llm_call_record: dict[str, Any] | None = None
     try:
         prompt_messages = await build_intent_prompt(
             user_message=user_message,
@@ -143,10 +268,22 @@ async def router_intent_node(state: GraphState) -> dict[str, Any]:
             json_schema=_INTENT_OUTPUT_SCHEMA,
             temperature=0.2,
         )
+        await degradation_policy.llm_breaker.record_success()
+
         intent = _normalize_intent(llm_result.get("intent")) or "route_recommend"
         secondary_intent = _normalize_intent(llm_result.get("secondary_intent"))
         extracted_entities_raw = llm_result.get("extracted_entities") or {}
         reasoning = str(llm_result.get("reasoning") or "")
+
+        result = _RouterResult(
+            intent=intent,
+            secondary_intent=secondary_intent,
+            extracted_entities=extracted_entities_raw,
+            reasoning=reasoning,
+            source="stage3_llm",
+            confidence=float(llm_result.get("confidence") or 0.8),
+        )
+
         llm_call_record = {
             "node": "router",
             "status": "success",
@@ -154,40 +291,96 @@ async def router_intent_node(state: GraphState) -> dict[str, Any]:
             "output": _truncate_obj(llm_result),
         }
     except Exception as exc:
+        await degradation_policy.llm_breaker.record_failure()
         fallback = _fallback_intent_by_keywords(user_message)
-        intent = fallback.intent
+        result = _RouterResult(
+            intent=fallback.intent,
+            secondary_intent=None,
+            extracted_entities={},
+            reasoning="llm_failed_fallback",
+            source="stage3_llm_fallback",
+            confidence=0.5,
+        )
         request_human = request_human or fallback.request_human
-        secondary_intent = None
-        extracted_entities_raw = {}
-        reasoning = "llm_failed_fallback"
         _LOGGER.warning("router llm classify failed, use keyword fallback: %s", exc)
         llm_call_record = {
             "node": "router",
             "status": "fallback",
             "error": str(exc),
-            "output": {"intent": intent, "reasoning": reasoning},
+            "output": {"intent": result.intent, "reasoning": result.reasoning},
         }
     finally:
         if should_close:
             await llm_client.aclose()
 
-    reasoning_intents = _extract_intents_from_text(reasoning)
+    # Check for multi-intent from LLM reasoning
+    reasoning_intents = _extract_intents_from_text(result.reasoning)
     if len(reasoning_intents) >= 2:
         primary, secondary = _resolve_multi_intents(reasoning_intents)
         if primary:
-            intent = primary
-            secondary_intent = secondary
+            result.intent = primary
+            result.secondary_intent = secondary
 
-    entity_bucket = _select_entities_for_intent(intent, extracted_entities_raw)
+    output = _finalize_router_output(result, state, current_profile, candidate_route_ids, active_route_id, request_human)
+    if llm_call_record:
+        output["llm_calls"] = [llm_call_record]
+    return output
+
+
+def _detect_multi_intent_signal(user_message: str, result: _RouterResult) -> None:
+    """Check if a rule-classified message also contains secondary intent signals."""
+
+    found_intents: set[str] = set()
+    if _contains_any(user_message, _PRICE_KEYWORDS):
+        found_intents.add("price_schedule")
+    if _contains_any(user_message, _VISA_KEYWORDS):
+        found_intents.add("visa")
+    if _contains_any(user_message, _COMPARE_KEYWORDS):
+        found_intents.add("compare")
+    if _contains_any(user_message, _EXTERNAL_KEYWORDS):
+        found_intents.add("external_info")
+    if _DESTINATION_PATTERN.search(user_message):
+        found_intents.add("route_recommend")
+
+    found_intents.discard(result.intent)
+    if found_intents:
+        ordered = [i for i in _MULTI_INTENT_PRIORITY if i in found_intents]
+        if ordered:
+            result.secondary_intent = ordered[0]
+
+
+def _finalize_router_output(
+    result: _RouterResult,
+    state: GraphState,
+    current_profile: UserProfile,
+    candidate_route_ids: list[int],
+    active_route_id: int | None,
+    request_human: bool,
+) -> dict[str, Any]:
+    """Apply entity extraction, profile merge, intent validation, and build output."""
+
+    user_message = str(state.get("current_user_message") or "").strip()
+
+    entity_bucket = _select_entities_for_intent(result.intent, result.extracted_entities)
+
+    # Rule-based entity pre-extraction (works even without LLM)
+    rule_entities = _extract_entities_by_rules(user_message)
+    if rule_entities:
+        for key, value in rule_entities.items():
+            if key not in entity_bucket or not entity_bucket[key]:
+                entity_bucket[key] = value
+
     profile_patch = _build_user_profile_patch(entity_bucket)
 
     if _contains_any(user_message, _REMATCH_KEYWORDS):
-        rematch_entities = _select_entities_for_intent("rematch", extracted_entities_raw)
+        rematch_entities = _select_entities_for_intent("rematch", result.extracted_entities)
         rematch_patch = _build_user_profile_patch(rematch_entities)
         if rematch_patch:
             profile_patch.update(rematch_patch)
 
     updated_profile = _merge_user_profile_non_empty(current_profile, profile_patch)
+
+    intent = result.intent
 
     if _contains_any(user_message, _REMATCH_KEYWORDS):
         patch_dimension_count = _count_profile_patch_dimensions(profile_patch)
@@ -215,19 +408,51 @@ async def router_intent_node(state: GraphState) -> dict[str, Any]:
     if state.get("stage") == STAGE_REMATCH_COLLECTING:
         intent = "route_recommend"
 
+    secondary_intent = result.secondary_intent
     if secondary_intent == intent:
         secondary_intent = None
 
-    payload = {
+    is_multi = secondary_intent is not None
+
+    payload: dict[str, Any] = {
         "last_intent": intent,
         "secondary_intent": secondary_intent,
         "user_profile": updated_profile,
         "target_route_id": target_route_id,
         "request_human": request_human,
+        "is_multi_intent": is_multi,
     }
-    if llm_call_record:
-        payload["llm_calls"] = [llm_call_record]
     return payload
+
+
+def _extract_entities_by_rules(user_message: str) -> dict[str, Any]:
+    """Rule-based entity pre-extraction to reduce LLM dependency."""
+
+    entities: dict[str, Any] = {}
+
+    dest_matches = _DESTINATION_PATTERN.findall(user_message)
+    if dest_matches:
+        destinations = list(dict.fromkeys(m[1].strip() for m in dest_matches if m[1].strip()))
+        if destinations:
+            entities["destinations"] = destinations
+
+    days_match = _DAYS_PATTERN.search(user_message)
+    if days_match:
+        entities["days_range"] = days_match.group(0)
+
+    budget_match = _BUDGET_PATTERN.search(user_message)
+    if budget_match:
+        entities["budget_range"] = budget_match.group(0)
+
+    date_match = _DATE_PATTERN.search(user_message)
+    if date_match:
+        entities["depart_date_range"] = date_match.group(0)
+
+    people_match = _PEOPLE_PATTERN.search(user_message)
+    if people_match:
+        entities["people"] = people_match.group(0)
+
+    return entities
 
 
 def _resolve_llm_client() -> tuple[object, bool]:

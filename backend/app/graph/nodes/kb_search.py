@@ -1,4 +1,4 @@
-"""Route knowledge-base search node."""
+"""Route knowledge-base search node with merged query-gen + eval."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from app.graph.utils import resolve_llm_client as _resolve_llm_client_shared
 from app.models.schemas import UserProfile
 from app.prompts.kb_query_gen import build_kb_query_gen_prompt
 from app.prompts.kb_result_eval import build_kb_result_eval_prompt
+from app.services.circuit_breaker import degradation_policy
 from app.services.container import services
 from app.services.llm_client import LLMClient
 from app.utils.logger import get_logger
@@ -33,7 +34,12 @@ _KB_EVAL_SCHEMA: dict[str, Any] = {
 
 
 async def routes_kb_search_node(state: GraphState) -> dict[str, Any]:
-    """Search route candidates from KB with an agentic retry loop."""
+    """Search route candidates from KB with optimized retry loop.
+
+    Optimization: attempt 1 uses rule-based query (no LLM). LLM query generation
+    only fires on attempt 2+ when rule-based results are insufficient. Result eval
+    uses rule-based check first; LLM eval only when rule check is ambiguous.
+    """
 
     profile = _ensure_profile(state.get("user_profile"))
     user_message = str(state.get("current_user_message") or "").strip()
@@ -42,24 +48,33 @@ async def routes_kb_search_node(state: GraphState) -> dict[str, Any]:
     history = _normalize_history(state.get("context_turns"))
 
     workflow_service, route_service = _resolve_search_services()
-    llm_client, should_close = _resolve_llm_client()
+    llm_client: LLMClient | None = None
+    should_close = False
 
     previous_query: str | None = None
     previous_result_summary: str | None = None
 
     try:
         for attempt in range(1, _MAX_ATTEMPTS + 1):
-            query = await _generate_route_query(
-                llm_client=llm_client,
-                profile=profile,
-                user_message=user_message,
-                history=history,
-                attempt=attempt,
-                previous_query=previous_query,
-                previous_result_summary=previous_result_summary,
-            )
-            if not query:
-                query = _fallback_query_for_attempt(profile, attempt, previous_query)
+            if attempt == 1:
+                query = _build_primary_query(profile)
+                if not query:
+                    query = _build_destination_query(profile)
+            else:
+                if llm_client is None:
+                    llm_client, should_close = _resolve_llm_client()
+                query = await _generate_route_query(
+                    llm_client=llm_client,
+                    profile=profile,
+                    user_message=user_message,
+                    history=history,
+                    attempt=attempt,
+                    previous_query=previous_query,
+                    previous_result_summary=previous_result_summary,
+                )
+                if not query:
+                    query = _fallback_query_for_attempt(profile, attempt, previous_query)
+
             if not query:
                 _LOGGER.info("route_kb_search trace_id=%s attempt=%s skipped empty query", trace_id, attempt)
                 continue
@@ -73,20 +88,32 @@ async def routes_kb_search_node(state: GraphState) -> dict[str, Any]:
                 continue
 
             previous_result_summary = _summarize_candidates(candidates)
-            relevant, reasoning = await _evaluate_candidates_relevance(
-                llm_client=llm_client,
-                user_message=user_message,
-                profile=profile,
-                query=query,
-                candidates=candidates,
-            )
+
+            rule_relevant = _basic_relevance_check(profile, candidates)
+            if rule_relevant:
+                _LOGGER.info(
+                    "route_kb_search trace_id=%s attempt=%s rule_relevant=True candidates=%s",
+                    trace_id, attempt, len(candidates),
+                )
+                candidates = await _resolve_candidate_route_ids(route_service, candidates, trace_id)
+                return {"tool_results": {"candidates": candidates}}
+
+            if degradation_policy.llm_available:
+                if llm_client is None:
+                    llm_client, should_close = _resolve_llm_client()
+                relevant, reasoning = await _evaluate_candidates_relevance(
+                    llm_client=llm_client,
+                    user_message=user_message,
+                    profile=profile,
+                    query=query,
+                    candidates=candidates,
+                )
+            else:
+                relevant, reasoning = False, "llm_degraded_skip_eval"
+
             _LOGGER.info(
                 "route_kb_search trace_id=%s attempt=%s relevant=%s reasoning=%s candidates=%s",
-                trace_id,
-                attempt,
-                relevant,
-                reasoning,
-                len(candidates),
+                trace_id, attempt, relevant, reasoning, len(candidates),
             )
             if relevant:
                 candidates = await _resolve_candidate_route_ids(route_service, candidates, trace_id)
@@ -99,7 +126,7 @@ async def routes_kb_search_node(state: GraphState) -> dict[str, Any]:
         candidates = await _resolve_candidate_route_ids(route_service, candidates, trace_id)
         return {"tool_results": {"candidates": candidates}}
     finally:
-        if should_close:
+        if should_close and llm_client is not None:
             await llm_client.aclose()
 
 
@@ -127,6 +154,9 @@ async def _generate_route_query(
     previous_query: str | None,
     previous_result_summary: str | None,
 ) -> str | None:
+    if not degradation_policy.llm_available:
+        _LOGGER.info("kb_query_gen skipped: LLM circuit breaker open, attempt=%s", attempt)
+        return None
     try:
         messages = await build_kb_query_gen_prompt(
             user_profile=profile.model_dump(),
@@ -137,8 +167,10 @@ async def _generate_route_query(
             previous_result_summary=previous_result_summary,
         )
         text = await llm_client.chat(messages=messages, temperature=0.1, max_tokens=96)
+        degradation_policy.llm_breaker.record_success()
         return _normalize_query(text)
     except Exception as exc:
+        degradation_policy.llm_breaker.record_failure()
         _LOGGER.warning("route kb query generation failed attempt=%s: %s", attempt, exc)
         return None
 

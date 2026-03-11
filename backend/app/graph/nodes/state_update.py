@@ -1,4 +1,4 @@
-"""State persistence and audit node."""
+"""State persistence, audit, and conversation compression node."""
 
 from __future__ import annotations
 
@@ -6,12 +6,19 @@ from datetime import datetime
 from typing import Any
 
 from app.graph.state import GraphState
+from app.graph.utils import resolve_llm_client as _resolve_llm_client_shared
 from app.graph.utils import to_int_or_none as _to_int_or_none_shared
+from app.services.circuit_breaker import degradation_policy
 from app.services.container import services
+from app.utils.logger import get_logger
+
+_LOGGER = get_logger(__name__)
+_COMPRESS_THRESHOLD = 6
+_MAX_EXCLUDED_ROUTES = 50
 
 
 async def state_update_node(state: GraphState) -> dict[str, Any]:
-    """Append turn, persist session state, write audit log, and return latest version/turns."""
+    """Append turn, compress history >6 turns, clean excluded_route_ids, persist state, write audit."""
 
     session_id = str(state.get("session_id") or "").strip()
     if not session_id:
@@ -29,10 +36,27 @@ async def state_update_node(state: GraphState) -> dict[str, Any]:
     next_turns = list(current_turns)
     next_turns.append({"user": user_message, "assistant": response_text})
 
+    conversation_summary = state.get("conversation_summary") or None
+    if len(next_turns) > _COMPRESS_THRESHOLD:
+        conversation_summary = await _compress_history(next_turns, conversation_summary)
+        next_turns = next_turns[-3:]
+        _LOGGER.info("state_update compressed turns to 3, session=%s", session_id)
+
+    excluded_route_ids = state.get("excluded_route_ids")
+    if isinstance(excluded_route_ids, list) and len(excluded_route_ids) > _MAX_EXCLUDED_ROUTES:
+        excluded_route_ids = excluded_route_ids[-_MAX_EXCLUDED_ROUTES:]
+        state_patches["excluded_route_ids"] = excluded_route_ids
+
     session_service, audit_service = _resolve_services()
 
     persist_patch = dict(state_patches)
     persist_patch["context_turns"] = next_turns
+    if conversation_summary:
+        persist_patch["conversation_summary"] = conversation_summary
+
+    lead_score = state.get("lead_score")
+    if isinstance(lead_score, int) and lead_score > 0:
+        persist_patch["lead_score"] = lead_score
 
     persisted_state = await session_service.update_session_state(
         session_id=session_id,
@@ -51,10 +75,64 @@ async def state_update_node(state: GraphState) -> dict[str, Any]:
         state=state,
     )
 
-    return {
+    result: dict[str, Any] = {
         "state_version": persisted_state.state_version,
-        "context_turns": persisted_state.context_turns,
+        "context_turns": next_turns,
     }
+    if conversation_summary:
+        result["conversation_summary"] = conversation_summary
+    return result
+
+
+async def _compress_history(
+    turns: list[dict[str, str]],
+    existing_summary: str | None,
+) -> str:
+    """Compress older turns into a concise conversation summary."""
+    old_turns = turns[:-3]
+    old_text_parts: list[str] = []
+    for turn in old_turns:
+        u = turn.get("user", "")
+        a = turn.get("assistant", "")
+        old_text_parts.append(f"用户：{u}\n助手：{a}")
+    old_text = "\n".join(old_text_parts)
+
+    if not degradation_policy.llm_available:
+        return _rule_based_compress(old_text, existing_summary)
+
+    try:
+        from app.services.llm_client import LLMClient
+
+        llm_client, should_close = _resolve_llm_client_shared()
+        try:
+            prefix = f"之前的摘要：{existing_summary}\n\n" if existing_summary else ""
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是对话摘要专家。将以下旅游咨询对话压缩为不超过200字的中文摘要。"
+                        "保留：用户目的地、预算、天数、已推荐线路名称和ID、用户态度（满意/不满）。"
+                        "删除：寒暄、重复问答、助手的礼貌用语。仅输出摘要文本。"
+                    ),
+                },
+                {"role": "user", "content": f"{prefix}新增对话：\n{old_text}"},
+            ]
+            summary = await llm_client.chat(messages=messages, temperature=0.2, max_tokens=200)
+            degradation_policy.llm_breaker.record_success()
+            return str(summary or "").strip() or _rule_based_compress(old_text, existing_summary)
+        finally:
+            if should_close:
+                await llm_client.aclose()
+    except Exception as exc:
+        degradation_policy.llm_breaker.record_failure()
+        _LOGGER.warning("history compression LLM failed: %s", exc)
+        return _rule_based_compress(old_text, existing_summary)
+
+
+def _rule_based_compress(old_text: str, existing_summary: str | None) -> str:
+    """Fallback compression: keep first 200 chars of old turns."""
+    prefix = f"{existing_summary} " if existing_summary else ""
+    return f"{prefix}{old_text[:200]}".strip()[:400]
 
 
 async def _write_audit_log(

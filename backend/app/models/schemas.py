@@ -221,6 +221,8 @@ class SessionState(BaseModel):
     last_intent: str | None = None
     followup_count: int = 0
     context_turns: list[dict[str, str]] = Field(default_factory=list)
+    conversation_summary: str | None = None
+    lead_score: int = 0
     state_version: int = 1
 
 

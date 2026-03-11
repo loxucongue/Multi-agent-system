@@ -1,8 +1,9 @@
-"""Prompt loading helpers for runtime prompt version resolution."""
+"""Prompt loading helpers with A/B weighted selection support."""
 
 from __future__ import annotations
 
 import asyncio
+import random
 import time
 
 from sqlalchemy import func, select, update
@@ -13,17 +14,21 @@ from app.utils.logger import get_logger
 
 _LOGGER = get_logger(__name__)
 _PROMPT_CACHE_TTL_SECONDS = 60.0
-_PROMPT_CACHE: dict[str, tuple[float, str | None]] = {}
+_PROMPT_CACHE: dict[str, tuple[float, list[tuple[str, int, int]]]] = {}
 _PROMPT_CACHE_LOCK = asyncio.Lock()
 
 
 async def get_active_prompt(node_name: str) -> str | None:
-    """Return active prompt content for node_name, or None on miss/failure."""
+    """Return active prompt content for node_name via weighted random selection.
+
+    When multiple active prompt versions exist for the same node, selects one
+    based on traffic_weight (higher weight = more likely). This enables A/B testing.
+    """
 
     now = time.monotonic()
     cached = _PROMPT_CACHE.get(node_name)
     if cached and cached[0] > now:
-        return cached[1]
+        return _weighted_select(cached[1])
 
     try:
         from app.services.container import services
@@ -31,26 +36,50 @@ async def get_active_prompt(node_name: str) -> str | None:
         await services.initialize()
         async with services.session_factory() as session:
             stmt = (
-                select(PromptVersion.content)
+                select(PromptVersion.content, PromptVersion.traffic_weight, PromptVersion.id)
                 .where(
                     PromptVersion.node_name == node_name,
                     PromptVersion.is_active == True,  # noqa: E712
                 )
-                .limit(1)
+                .order_by(PromptVersion.traffic_weight.desc())
             )
             result = await session.execute(stmt)
-            content = result.scalar_one_or_none()
+            rows = result.all()
+
+        versions: list[tuple[str, int, int]] = []
+        for row in rows:
+            content, weight, vid = row
+            if content and str(content).strip():
+                versions.append((str(content), int(weight or 100), int(vid)))
 
         async with _PROMPT_CACHE_LOCK:
-            _PROMPT_CACHE[node_name] = (time.monotonic() + _PROMPT_CACHE_TTL_SECONDS, content)
-        return content
+            _PROMPT_CACHE[node_name] = (time.monotonic() + _PROMPT_CACHE_TTL_SECONDS, versions)
+
+        return _weighted_select(versions)
     except Exception as exc:
         _LOGGER.warning(f"failed to load active prompt node={node_name}: {exc}")
-        # Serve stale cache on transient DB failures when possible.
         stale = _PROMPT_CACHE.get(node_name)
         if stale:
-            return stale[1]
+            return _weighted_select(stale[1])
         return None
+
+
+def _weighted_select(versions: list[tuple[str, int, int]]) -> str | None:
+    """Select one prompt version based on traffic_weight."""
+    if not versions:
+        return None
+    if len(versions) == 1:
+        return versions[0][0]
+    total = sum(v[1] for v in versions)
+    if total <= 0:
+        return versions[0][0]
+    r = random.randint(1, total)
+    cumulative = 0
+    for content, weight, _ in versions:
+        cumulative += weight
+        if r <= cumulative:
+            return content
+    return versions[0][0]
 
 
 async def invalidate_prompt_cache(node_name: str | None = None) -> None:

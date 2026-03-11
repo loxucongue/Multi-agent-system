@@ -30,6 +30,7 @@ export interface RouteCard {
   name: string;
   tags: string[];
   summary: string;
+  features?: string;
   doc_url: string;
   sort_weight: number;
   price_min: number | null;
@@ -48,6 +49,8 @@ export interface RouteDetail {
   itinerary_json: unknown;
   notice: string;
   included: string;
+  features: string | null;
+  cost_excluded: string | null;
   doc_url: string;
   is_hot: boolean;
   sort_weight: number;

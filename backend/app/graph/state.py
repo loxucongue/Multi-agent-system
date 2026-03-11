@@ -118,10 +118,21 @@ class GraphState(TypedDict):
     followup_count: int
 
     context_turns: list[dict[str, str]]
+    conversation_summary: str | None
     state_version: int
 
     trace_id: str
     run_id: str
+
+    # Planner-Dispatcher fields
+    task_plan: list[dict[str, Any]]
+    task_cursor: int
+    task_results: dict[int, dict[str, Any]]
+    retry_counts: dict[int, int]
+    is_multi_intent: bool
+
+    # Lead scoring
+    lead_score: int
 
     tool_results: dict[str, Any] | None
     response_text: str | None
@@ -150,6 +161,10 @@ def create_initial_state(
     profile = _parse_user_profile(session_state.user_profile)
     safe_message = user_message.strip()
 
+    persisted_lead_score = 0
+    if hasattr(session_state, "lead_score"):
+        persisted_lead_score = max(0, int(getattr(session_state, "lead_score", 0) or 0))
+
     return GraphState(
         messages=[HumanMessage(content=safe_message)] if safe_message else [],
         session_id="",
@@ -166,9 +181,16 @@ def create_initial_state(
         secondary_intent=None,
         followup_count=max(0, int(session_state.followup_count)),
         context_turns=_normalize_context_turns(session_state.context_turns),
+        conversation_summary=getattr(session_state, "conversation_summary", None),
         state_version=max(1, int(session_state.state_version)),
         trace_id=trace_id,
         run_id=run_id,
+        task_plan=[],
+        task_cursor=0,
+        task_results={},
+        retry_counts={},
+        is_multi_intent=False,
+        lead_score=persisted_lead_score,
         tool_results=None,
         response_text=None,
         response_tokens=None,

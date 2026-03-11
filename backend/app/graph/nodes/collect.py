@@ -1,4 +1,4 @@
-"""Collect requirement node for slot filling and follow-up questions."""
+"""Collect requirement node: progressive guidance with template-first slot filling."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from app.graph.utils import ensure_profile as _ensure_profile_shared
 from app.graph.utils import resolve_llm_client as _resolve_llm_client_shared
 from app.models.schemas import UserProfile
 from app.prompts.requirement_collection import build_collect_prompt
+from app.services.circuit_breaker import degradation_policy
 from app.services.llm_client import LLMClient
 from app.utils.logger import get_logger
 
@@ -42,6 +43,16 @@ _STYLE_HINTS = (
     "探险",
 )
 
+_SLOT_QUESTIONS: dict[str, str] = {
+    "destination": "您想去哪里玩呢？比如日本、泰国、新加坡等~",
+    "days_range": "大致玩几天呢？",
+    "budget_range": "每人预算大概在什么范围？",
+    "depart_date_range": "什么时候出发呢？",
+    "people": "几个人出行？有小朋友或老人吗？",
+    "style_prefs": "有偏好的旅行风格吗？比如亲子、蜜月、美食、购物等~",
+    "origin_city": "您从哪个城市出发？",
+}
+
 _COLLECT_OUTPUT_SCHEMA: dict[str, Any] = {
     "name": "requirement_collection",
     "schema": {
@@ -59,18 +70,24 @@ _COLLECT_OUTPUT_SCHEMA: dict[str, Any] = {
 
 
 async def collect_requirements_node(state: GraphState) -> dict[str, Any]:
-    """Collect destination and optional constraints, return GraphState patch."""
+    """Collect destination and optional constraints with progressive guidance.
+
+    Strategy: '宽进严筛' — only destination is required to start searching.
+    Soft guides prompt for additional info without blocking the flow.
+    """
 
     profile = _ensure_profile(state.get("user_profile"))
     user_message = str(state.get("current_user_message") or "").strip()
     last_intent = str(state.get("last_intent") or "")
-    slots_ready = _has_ready_recommendation_inputs(profile)
     in_rematch_collecting = state.get("stage") == STAGE_REMATCH_COLLECTING
+
+    # "宽进严筛": only need destination to start recommendation
+    slots_ready = _has_minimum_inputs(profile)
 
     if in_rematch_collecting:
         if last_intent != "rematch":
             response_text = "好的，我基于刚才确认的条件继续为您匹配新的线路。"
-            if slots_ready and not profile.days_range and not profile.budget_range:
+            if slots_ready and _should_soft_guide(profile):
                 response_text = f"{response_text}\n{_SOFT_GUIDE}"
             return {
                 "user_profile": profile,
@@ -80,7 +97,7 @@ async def collect_requirements_node(state: GraphState) -> dict[str, Any]:
             }
 
         response_text = _build_rematch_confirmation_text(user_message=user_message, profile=profile)
-        if slots_ready and not profile.days_range and not profile.budget_range:
+        if slots_ready and _should_soft_guide(profile):
             response_text = f"{response_text}\n{_SOFT_GUIDE}"
 
         return {
@@ -91,8 +108,8 @@ async def collect_requirements_node(state: GraphState) -> dict[str, Any]:
         }
 
     if slots_ready:
-        response_text = "好的，已收到您的需求，我这就为您筛选更匹配的线路。"
-        if not profile.days_range and not profile.budget_range:
+        response_text = "好的，已收到您的需求，我这就为您筛选匹配的线路。"
+        if _should_soft_guide(profile):
             response_text = f"{response_text}\n{_SOFT_GUIDE}"
 
         return {
@@ -101,7 +118,28 @@ async def collect_requirements_node(state: GraphState) -> dict[str, Any]:
             "response_text": response_text,
         }
 
+    # No destination yet — use template questions (no LLM needed for simple cases)
     missing_slots = _get_missing_slots(profile)
+
+    if not _needs_llm_for_collection(user_message, missing_slots):
+        response_text = _template_questions(missing_slots)
+        return {
+            "user_profile": profile,
+            "slots_ready": False,
+            "response_text": response_text,
+            "stage": STAGE_COLLECTING,
+        }
+
+    # Complex case: user message is ambiguous or contradictory, use LLM
+    if not degradation_policy.llm_available:
+        response_text = _template_questions(missing_slots)
+        return {
+            "user_profile": profile,
+            "slots_ready": False,
+            "response_text": response_text,
+            "stage": STAGE_COLLECTING,
+        }
+
     llm_result = await _generate_collect_questions(
         user_message=user_message,
         profile=profile,
@@ -113,7 +151,7 @@ async def collect_requirements_node(state: GraphState) -> dict[str, Any]:
 
     return {
         "user_profile": updated_profile,
-        "slots_ready": _has_ready_recommendation_inputs(updated_profile),
+        "slots_ready": _has_minimum_inputs(updated_profile),
         "response_text": response_text,
         "stage": STAGE_COLLECTING,
     }
@@ -144,7 +182,21 @@ def _get_missing_slots(profile: UserProfile) -> list[str]:
     return missing
 
 
+def _has_minimum_inputs(profile: UserProfile) -> bool:
+    """'宽进严筛': only destination is required to begin recommendation."""
+
+    return len(profile.destinations) > 0
+
+
+def _should_soft_guide(profile: UserProfile) -> bool:
+    """Whether to append soft guidance for additional info."""
+
+    return not profile.days_range and not profile.budget_range
+
+
 def _has_ready_recommendation_inputs(profile: UserProfile) -> bool:
+    """Legacy check: at least destination + one other dimension."""
+
     if len(profile.destinations) == 0:
         return False
 
@@ -157,6 +209,44 @@ def _has_ready_recommendation_inputs(profile: UserProfile) -> bool:
         bool(str(profile.origin_city or "").strip()),
     )
     return any(other_dimensions)
+
+
+def _needs_llm_for_collection(user_message: str, missing_slots: list[str]) -> bool:
+    """Determine if LLM is needed for understanding ambiguous user input."""
+
+    if "destination" in missing_slots:
+        return False
+
+    ambiguity_signals = [
+        "但" in user_message and ("不" in user_message or "别" in user_message),
+        "或者" in user_message and "和" in user_message,
+        user_message.count("？") >= 2 or user_message.count("?") >= 2,
+        len(user_message) > 100,
+    ]
+    return any(ambiguity_signals)
+
+
+def _template_questions(missing_slots: list[str]) -> str:
+    """Build template-based follow-up using slot-specific questions."""
+
+    if not missing_slots:
+        return _SLOT_QUESTIONS["destination"]
+
+    if "destination" in missing_slots:
+        return _SLOT_QUESTIONS["destination"]
+
+    questions = []
+    priority_order = ["days_range", "budget_range", "depart_date_range", "people", "style_prefs", "origin_city"]
+    for slot in priority_order:
+        if slot in missing_slots and slot in _SLOT_QUESTIONS:
+            questions.append(_SLOT_QUESTIONS[slot])
+            if len(questions) >= 2:
+                break
+
+    if not questions:
+        return _SLOT_QUESTIONS["destination"]
+
+    return "为了推荐更精准，想再确认一下：\n" + "\n".join(f"{i+1}. {q}" for i, q in enumerate(questions))
 
 
 async def _generate_collect_questions(
@@ -176,16 +266,18 @@ async def _generate_collect_questions(
             json_schema=_COLLECT_OUTPUT_SCHEMA,
             temperature=0.3,
         )
+        await degradation_policy.llm_breaker.record_success()
         if isinstance(result, dict):
             return result
     except Exception as exc:
+        await degradation_policy.llm_breaker.record_failure()
         _LOGGER.warning(f"collect requirement llm failed, fallback to template questions: {exc}")
     finally:
         if should_close:
             await llm_client.aclose()
 
     return {
-        "questions": ["您更想去哪里玩呢？比如日本、泰国、新加坡等。"],
+        "questions": [_template_questions(missing_slots)],
         "suggested_state_patch": {},
         "slots_ready": False,
         "reasoning": "fallback",
