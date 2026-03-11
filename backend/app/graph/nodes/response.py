@@ -9,6 +9,7 @@ from app.graph.state import GraphState, STAGE_COLLECTING, STAGE_COMPARING, STAGE
 from app.graph.utils import normalize_int_list as _normalize_int_list_shared
 from app.graph.utils import resolve_llm_client as _resolve_llm_client_shared
 from app.graph.utils import to_int_or_none as _to_int_or_none_shared
+from app.graph.utils import extract_profile_destinations as _extract_profile_destinations_shared
 from app.prompts.response_generation import build_response_prompt
 from app.services.circuit_breaker import degradation_policy
 from app.services.llm_client import LLMClient
@@ -245,6 +246,10 @@ def _try_build_template(intent: str, tool_results: dict[str, Any], state: GraphS
         return _template_price_schedule(tool_results)
     if intent == "compare":
         return _template_compare(tool_results)
+    if intent == "visa":
+        return _template_visa(tool_results)
+    if intent == "external_info":
+        return _template_external_info(tool_results)
     return None
 
 
@@ -342,6 +347,22 @@ def _template_compare(tool_results: dict[str, Any]) -> str | None:
     return f"{header}\n{sep}\n" + "\n".join(rows)
 
 
+def _template_visa(tool_results: dict[str, Any]) -> str | None:
+    """Template for visa query results — output structured answer directly."""
+    answer = tool_results.get("answer")
+    if isinstance(answer, str) and answer.strip():
+        return answer.strip()
+    return None
+
+
+def _template_external_info(tool_results: dict[str, Any]) -> str | None:
+    """Template for external info results — output structured answer directly."""
+    output = tool_results.get("output")
+    if isinstance(output, str) and output.strip():
+        return output.strip()
+    return None
+
+
 async def _generate_opening_line(intent: str, user_message: str, state: GraphState) -> str:
     """Generate a concise, personalized opening line via LLM (max 50 tokens)."""
     if not degradation_policy.llm_available:
@@ -377,6 +398,8 @@ def _static_opening(intent: str) -> str:
         "route_recommend": "根据您的需求，我为您精选了以下线路：",
         "price_schedule": "以下是您关注线路的最新价格和团期：",
         "compare": "以下是您选择的线路对比：",
+        "visa": "以下是您所咨询目的地的签证信息：",
+        "external_info": "以下是为您查到的相关信息：",
     }
     return openings.get(intent, "")
 
@@ -503,24 +526,7 @@ def _to_route_card(detail: dict[str, Any]) -> dict[str, Any]:
 
 
 def _extract_profile_destinations(state: GraphState) -> list[str]:
-    profile = state.get("user_profile")
-    destinations: list[str] = []
-
-    if hasattr(profile, "destinations") and isinstance(profile.destinations, list):
-        destinations = [str(item).strip() for item in profile.destinations if str(item).strip()]
-    elif isinstance(profile, dict):
-        raw_destinations = profile.get("destinations")
-        if isinstance(raw_destinations, list):
-            destinations = [str(item).strip() for item in raw_destinations if str(item).strip()]
-
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for destination in destinations:
-        if destination in seen:
-            continue
-        seen.add(destination)
-        deduped.append(destination)
-    return deduped
+    return _extract_profile_destinations_shared(state)
 
 
 def _is_route_recommend_destination_mismatch(tool_results: dict[str, Any], state: GraphState) -> bool:

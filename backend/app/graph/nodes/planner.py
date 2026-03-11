@@ -152,16 +152,58 @@ def _build_static_plan(intent: str) -> list[dict[str, Any]]:
 
 
 def _build_merged_static_plan(primary: str, secondary: str) -> list[dict[str, Any]]:
-    """Merge two static plans for multi-intent execution."""
+    """Merge two static plans with deduplication and dependency ordering."""
 
     primary_tasks = _INTENT_TO_DEFAULT_PLAN.get(primary, [])
     secondary_tasks = _INTENT_TO_DEFAULT_PLAN.get(secondary, [])
 
-    all_tasks = list(primary_tasks) + list(secondary_tasks)
+    seen_nodes: set[str] = set()
+    merged: list[dict[str, str]] = []
+    for t in list(primary_tasks) + list(secondary_tasks):
+        node = t["node"]
+        if node not in seen_nodes:
+            seen_nodes.add(node)
+            merged.append(t)
+
+    merged = _enforce_dependency_order(merged)
+
     plan = []
-    for i, t in enumerate(all_tasks):
+    for i, t in enumerate(merged):
         plan.append({"step": i + 1, "node": t["node"], "reason": t["reason"]})
     return plan
+
+
+_NODE_DEPENDENCIES: dict[str, list[str]] = {
+    "select": ["kb_search"],
+    "db_detail": ["select"],
+    "price": ["db_detail"],
+    "followup": ["db_detail"],
+    "compare": ["db_detail"],
+}
+
+
+def _enforce_dependency_order(tasks: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Topological re-order to satisfy node dependency constraints."""
+
+    node_to_task = {t["node"]: t for t in tasks}
+    nodes = [t["node"] for t in tasks]
+
+    ordered: list[str] = []
+    placed: set[str] = set()
+
+    def _place(node: str) -> None:
+        if node in placed:
+            return
+        for dep in _NODE_DEPENDENCIES.get(node, []):
+            if dep in node_to_task:
+                _place(dep)
+        placed.add(node)
+        ordered.append(node)
+
+    for n in nodes:
+        _place(n)
+
+    return [node_to_task[n] for n in ordered]
 
 
 async def _llm_plan(intent: str, secondary_intent: str, state: GraphState) -> list[dict[str, Any]]:

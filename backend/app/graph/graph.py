@@ -209,9 +209,6 @@ async def run_graph_streaming(
     events_key = f"events:{run_id}"
     done_key = f"done:{run_id}"
 
-    def _push_event(event_type: str, data: Any) -> None:
-        """Compatibility no-op wrapper; async push is used directly."""
-
     async def _push(event_type: str, data: Any) -> None:
         payload = json.dumps({"event": event_type, "data": data}, ensure_ascii=False, default=str)
         await redis_client.rpush(events_key, payload)

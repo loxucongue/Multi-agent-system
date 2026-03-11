@@ -5,6 +5,7 @@ Centralize frequently duplicated helpers used across graph nodes.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.models.schemas import UserProfile
@@ -79,4 +80,46 @@ def resolve_llm_client() -> tuple[LLMClient, bool]:
         return services.llm_client, False
     except Exception:
         return LLMClient(), True
+
+
+def extract_profile_destinations(state: dict[str, Any]) -> list[str]:
+    """Extract deduplicated destination list from state user_profile."""
+
+    profile = state.get("user_profile")
+    raw: list[str] = []
+
+    if hasattr(profile, "destinations") and isinstance(profile.destinations, list):
+        raw = [str(item).strip() for item in profile.destinations if str(item).strip()]
+    elif isinstance(profile, dict):
+        raw_destinations = profile.get("destinations")
+        if isinstance(raw_destinations, list):
+            raw = [str(item).strip() for item in raw_destinations if str(item).strip()]
+
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for d in raw:
+        if d not in seen:
+            seen.add(d)
+            deduped.append(d)
+    return deduped
+
+
+_DEST_PATTERN = re.compile(r"(?:去|到|想去)\s*([\u4e00-\u9fa5A-Za-z]{2,12})")
+
+
+def extract_destinations_from_text(text: str) -> list[str]:
+    """Extract destination keywords from free text via regex."""
+
+    message = str(text or "").strip()
+    if not message:
+        return []
+    matches = _DEST_PATTERN.findall(message)
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for item in matches:
+        lower = str(item).strip().lower()
+        if lower and lower not in seen:
+            seen.add(lower)
+            deduped.append(lower)
+    return deduped
 

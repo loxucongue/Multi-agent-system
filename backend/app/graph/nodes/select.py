@@ -11,6 +11,7 @@ from app.graph.utils import ensure_profile as _ensure_profile_shared
 from app.graph.utils import normalize_history as _normalize_history_shared
 from app.graph.utils import resolve_llm_client as _resolve_llm_client_shared
 from app.graph.utils import to_int_or_none as _to_int_or_none_shared
+from app.graph.utils import extract_destinations_from_text as _extract_destinations_from_text_shared
 from app.models.schemas import UserProfile
 from app.services.circuit_breaker import degradation_policy
 from app.services.llm_client import LLMClient
@@ -245,7 +246,7 @@ def _score_candidates(
             " ".join(str(tag) for tag in (candidate.get("tags") or []) if str(tag).strip()),
         ]).lower()
 
-        if destinations and any(d in text for d in destinations):
+        if destinations and any(_safe_destination_match(d, text) for d in destinations):
             score += 3
 
         if days_range_str:
@@ -266,6 +267,18 @@ def _score_candidates(
 
         scored.append((candidate, score))
     return scored
+
+
+_SHORT_KEYWORD_EXCLUDE = {"日", "天", "人", "月", "号", "去", "到", "想", "看", "要", "有", "了", "的"}
+
+
+def _safe_destination_match(keyword: str, text: str) -> bool:
+    """Match destination keyword, with false-positive guard for short keywords."""
+    if not keyword:
+        return False
+    if len(keyword) <= 1 and keyword in _SHORT_KEYWORD_EXCLUDE:
+        return False
+    return keyword in text
 
 
 def _days_in_range(candidate_days: Any, days_range: str) -> bool:
@@ -422,19 +435,7 @@ def _select_by_destination_only(
 
 
 def _extract_destinations_from_text(text: str) -> list[str]:
-    message = str(text or "").strip()
-    if not message:
-        return []
-    matches = re.findall(r"(?:去|到|想去)\s*([\u4e00-\u9fa5A-Za-z]{2,12})", message)
-    normalized = [str(item).strip().lower() for item in matches if str(item).strip()]
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for item in normalized:
-        if item in seen:
-            continue
-        seen.add(item)
-        deduped.append(item)
-    return deduped
+    return _extract_destinations_from_text_shared(text)
 
 
 def _build_conversation_history(state: GraphState) -> list[dict[str, str]]:

@@ -39,6 +39,5 @@
 
 ## 四、已知限制
 
-- response_text 当前为整段推送（非逐 token），后续可优化
 - Admin 页面为 MVP 级别，UI 可进一步美化
 - Coze 工作流依赖外部服务稳定性
