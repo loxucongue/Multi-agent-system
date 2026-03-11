@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { MessageOutlined, PlusOutlined } from "@ant-design/icons";
-import { Button, Empty, List, Skeleton, Space, Typography } from "antd";
+import { Button, Empty, Skeleton, Space, Typography } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
@@ -32,7 +32,12 @@ const readHistory = (): SessionHistoryItem[] => {
     if (!Array.isArray(parsed)) {
       return [];
     }
-    return parsed.sort((a, b) => b.last_active_at - a.last_active_at);
+    return parsed.sort((a, b) => {
+      if (b.created_at !== a.created_at) {
+        return b.created_at - a.created_at;
+      }
+      return b.last_active_at - a.last_active_at;
+    });
   } catch {
     return [];
   }
@@ -88,7 +93,7 @@ export default function SessionList() {
   };
 
   const handleSwitch = async (targetSessionId: string) => {
-    if (targetSessionId === sessionId || isStreaming) {
+    if (targetSessionId === sessionId) {
       return;
     }
     setSwitchingId(targetSessionId);
@@ -101,8 +106,8 @@ export default function SessionList() {
   };
 
   const grouped = useMemo(() => {
-    const recent = sessions.filter((item) => isRecent(item.last_active_at));
-    const earlier = sessions.filter((item) => !isRecent(item.last_active_at));
+    const recent = sessions.filter((item) => isRecent(item.created_at));
+    const earlier = sessions.filter((item) => !isRecent(item.created_at));
     return { recent, earlier };
   }, [sessions]);
 
@@ -170,15 +175,13 @@ function Section({
       <Text type="secondary" style={{ fontSize: 12, marginLeft: 4 }}>
         {title}
       </Text>
-      <List
-        dataSource={items}
-        split={false}
-        renderItem={(item) => {
+      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+        {items.map((item) => {
           const active = item.session_id === sessionId;
           const switching = switchingId === item.session_id;
 
           return (
-            <List.Item style={{ padding: 0, marginTop: 8 }}>
+            <div key={item.session_id}>
               <Button
                 block
                 loading={switching}
@@ -217,10 +220,10 @@ function Section({
                   </div>
                 </div>
               </Button>
-            </List.Item>
+            </div>
           );
-        }}
-      />
+        })}
+      </div>
     </div>
   );
 }

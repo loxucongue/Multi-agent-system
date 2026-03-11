@@ -24,14 +24,53 @@ def upgrade() -> None:
     if "features" not in columns:
         op.add_column(
             "routes",
-            sa.Column("features", sa.Text(), nullable=True, comment="线路特色标签文本"),
+            sa.Column("features", sa.Text(), nullable=True, comment="Route feature tags text"),
         )
     if "cost_excluded" not in columns:
         op.add_column(
             "routes",
-            sa.Column("cost_excluded", sa.Text(), nullable=True, comment="费用不含说明"),
+            sa.Column("cost_excluded", sa.Text(), nullable=True, comment="Cost excluded details"),
         )
+
     if "uq_routes_doc_url" not in indexes:
+        duplicate_urls = bind.execute(
+            sa.text(
+                """
+                SELECT doc_url
+                FROM routes
+                WHERE doc_url IS NOT NULL AND doc_url <> ''
+                GROUP BY doc_url
+                HAVING COUNT(*) > 1
+                """
+            ),
+        ).fetchall()
+
+        for row in duplicate_urls:
+            doc_url = row[0]
+            duplicated_rows = bind.execute(
+                sa.text(
+                    """
+                    SELECT id
+                    FROM routes
+                    WHERE doc_url = :doc_url
+                    ORDER BY id ASC
+                    """
+                ),
+                {"doc_url": doc_url},
+            ).fetchall()
+            for dup in duplicated_rows[1:]:
+                route_id = dup[0]
+                bind.execute(
+                    sa.text(
+                        """
+                        UPDATE routes
+                        SET doc_url = :new_doc_url
+                        WHERE id = :route_id
+                        """
+                    ),
+                    {"new_doc_url": f"{doc_url}#dup-{route_id}", "route_id": route_id},
+                )
+
         op.create_index("uq_routes_doc_url", "routes", ["doc_url"], unique=True)
 
 

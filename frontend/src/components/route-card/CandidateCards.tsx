@@ -13,6 +13,9 @@ interface CandidateCardsProps {
   onCompare: (routeIds: number[]) => void;
   onGuideRematch?: () => void;
   loading?: boolean;
+  selectedRouteIds?: number[];
+  onSelectedRouteIdsChange?: (routeIds: number[]) => void;
+  extraSelectedCount?: number;
 }
 
 const deriveDays = (summary: string): number => {
@@ -34,15 +37,39 @@ const deriveHighlights = (summary: string): string[] => {
   return parts.slice(0, 5);
 };
 
-export default function CandidateCards({ cards, onSelect, onCompare, onGuideRematch, loading = false }: CandidateCardsProps) {
-  const [selectedRouteIds, setSelectedRouteIds] = useState<number[]>([]);
+export default function CandidateCards({
+  cards,
+  onSelect,
+  onCompare,
+  onGuideRematch,
+  loading = false,
+  selectedRouteIds,
+  onSelectedRouteIdsChange,
+  extraSelectedCount = 0,
+}: CandidateCardsProps) {
+  const [internalSelectedRouteIds, setInternalSelectedRouteIds] = useState<number[]>([]);
+  const isControlled = Array.isArray(selectedRouteIds);
+  const currentSelectedRouteIds = isControlled ? selectedRouteIds : internalSelectedRouteIds;
+
+  const setSelectedRouteIds = (updater: (prev: number[]) => number[]) => {
+    if (isControlled) {
+      const next = updater(currentSelectedRouteIds);
+      const sameLength = next.length === currentSelectedRouteIds.length;
+      const sameItems = sameLength && next.every((id, index) => id === currentSelectedRouteIds[index]);
+      if (!sameItems) {
+        onSelectedRouteIdsChange?.(next);
+      }
+      return;
+    }
+    setInternalSelectedRouteIds(updater);
+  };
 
   useEffect(() => {
     const validIds = new Set(cards.map((card) => card.id));
     setSelectedRouteIds((prev) => prev.filter((id) => validIds.has(id)));
-  }, [cards]);
+  }, [cards, isControlled, currentSelectedRouteIds]);
 
-  const selectedCount = selectedRouteIds.length;
+  const selectedCount = currentSelectedRouteIds.length + Math.max(0, extraSelectedCount);
   const canCompare = selectedCount >= 2;
 
   const cardsById = useMemo(() => {
@@ -93,7 +120,7 @@ export default function CandidateCards({ cards, onSelect, onCompare, onGuideRema
     <div style={{ marginTop: 12 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: 72 }}>
         {cards.map((card) => {
-          const checked = selectedRouteIds.includes(card.id);
+          const checked = currentSelectedRouteIds.includes(card.id);
           const days = deriveDays(card.summary);
           const highlights = deriveHighlights(card.summary);
           return (
@@ -170,7 +197,7 @@ export default function CandidateCards({ cards, onSelect, onCompare, onGuideRema
           type="primary"
           disabled={!canCompare}
           onClick={() => {
-            const finalIds = selectedRouteIds.filter((id) => cardsById.has(id));
+            const finalIds = currentSelectedRouteIds.filter((id) => cardsById.has(id));
             onCompare(finalIds);
           }}
         >

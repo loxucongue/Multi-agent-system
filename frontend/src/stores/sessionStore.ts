@@ -177,7 +177,12 @@ const readSessionHistory = (): SessionHistoryItem[] => {
     if (!Array.isArray(parsed)) {
       return [];
     }
-    return parsed;
+    return parsed.sort((a, b) => {
+      if (b.created_at !== a.created_at) {
+        return b.created_at - a.created_at;
+      }
+      return b.last_active_at - a.last_active_at;
+    });
   } catch {
     return [];
   }
@@ -239,14 +244,20 @@ const upsertSessionHistory = (sessionId: string, userText?: string) => {
 
   const current = items[idx];
   const shouldReplaceTitle = current.title === "新的旅游咨询" || current.title === "未命名咨询";
+  const shouldTouchLastActive = Boolean(userText && userText.trim());
   items[idx] = {
     ...current,
     title: userText && shouldReplaceTitle ? nextTitle : current.title,
-    last_active_at: now,
+    last_active_at: shouldTouchLastActive ? now : current.last_active_at,
   };
-
-  const reordered = [items[idx], ...items.filter((item) => item.session_id !== sessionId)];
-  writeSessionHistory(reordered);
+  writeSessionHistory(
+    items.sort((a, b) => {
+      if (b.created_at !== a.created_at) {
+        return b.created_at - a.created_at;
+      }
+      return b.last_active_at - a.last_active_at;
+    }),
+  );
 };
 
 const mapDetailToState = (detail: SessionDetailResponse): Partial<StoreShape> & { sessionId: string } => ({

@@ -53,6 +53,7 @@ const dedupeRouteIds = (routeIds: number[]) => {
 export default function ChatPage() {
   const [initializing, setInitializing] = useState(true);
   const [activeCheckedForCompare, setActiveCheckedForCompare] = useState(false);
+  const [candidateCheckedRouteIds, setCandidateCheckedRouteIds] = useState<number[]>([]);
   const [aiCompareLoading, setAiCompareLoading] = useState(false);
 
   const [viewportWidth, setViewportWidth] = useState<number>(typeof window === "undefined" ? 1440 : window.innerWidth);
@@ -61,7 +62,7 @@ export default function ChatPage() {
   const resizeStartXRef = useRef(0);
   const resizeStartWidthRef = useRef(360);
 
-  const { connect } = useSSE();
+  const { connect, disconnect } = useSSE();
 
   const {
     sessionId,
@@ -169,6 +170,10 @@ export default function ChatPage() {
       window.localStorage.setItem(CURRENT_SESSION_KEY, sessionId);
     }
   }, [sessionId]);
+
+  useEffect(() => {
+    disconnect();
+  }, [disconnect, sessionId]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -344,6 +349,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     setActiveCheckedForCompare(false);
+    setCandidateCheckedRouteIds([]);
   }, [activeRouteId, sessionId]);
 
   const lastUserMessage = useMemo(
@@ -419,6 +425,9 @@ export default function ChatPage() {
 
               <CandidateCards
                 cards={candidateCards}
+                selectedRouteIds={candidateCheckedRouteIds}
+                onSelectedRouteIdsChange={setCandidateCheckedRouteIds}
+                extraSelectedCount={activeCheckedForCompare && activeRouteId !== null ? 1 : 0}
                 onGuideRematch={() => {
                   void handleSend("请重新为我匹配符合当前条件的旅游线路，我可以继续补充需求");
                 }}

@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = ""
     SESSION_CONTEXT_TURNS: int = 6
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
+    CORS_ORIGIN_REGEX: str = (
+        r"^https?://("
+        r"localhost|127\.0\.0\.1|0\.0\.0\.0|"
+        r"10\.\d+\.\d+\.\d+|"
+        r"172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+|"
+        r"192\.168\.\d+\.\d+"
+        r")(:\d+)?$"
+    )
 
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE),

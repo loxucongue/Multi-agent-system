@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import func, select
@@ -53,6 +54,10 @@ class AuditService:
         masked_error_stack = self._mask_sensitive(error_stack)
         masked_coze_debug_url = self._mask_sensitive(coze_debug_url)
 
+        safe_topk_results = self._to_json_compatible(masked_topk_results)
+        safe_api_params = self._to_json_compatible(masked_api_params)
+        safe_token_usage = self._to_json_compatible(masked_token_usage)
+
         if isinstance(masked_final_answer_summary, str):
             masked_final_answer_summary = masked_final_answer_summary[:_FINAL_SUMMARY_MAX_LEN]
         else:
@@ -64,13 +69,13 @@ class AuditService:
             session_id=session_id,
             intent=intent,
             search_query=masked_search_query,
-            topk_results=masked_topk_results,
+            topk_results=safe_topk_results,
             route_id=route_id,
             db_query_summary=masked_db_query_summary,
-            api_params=masked_api_params,
+            api_params=safe_api_params,
             api_latency_ms=api_latency_ms,
             final_answer_summary=masked_final_answer_summary,
-            token_usage=masked_token_usage,
+            token_usage=safe_token_usage,
             error_stack=masked_error_stack,
             coze_logid=coze_logid,
             coze_debug_url=masked_coze_debug_url,
@@ -183,3 +188,28 @@ class AuditService:
             return {key: self._mask_sensitive(value) for key, value in data.items()}
 
         return data
+
+    def _to_json_compatible(self, data: Any) -> Any:
+        """Convert complex Python objects into JSON-serializable structures."""
+        if data is None:
+            return None
+
+        if isinstance(data, (str, int, float, bool)):
+            return data
+
+        if isinstance(data, (datetime, date, time)):
+            return data.isoformat()
+
+        if isinstance(data, Decimal):
+            return str(data)
+
+        if isinstance(data, bytes):
+            return data.decode("utf-8", errors="replace")
+
+        if isinstance(data, dict):
+            return {str(key): self._to_json_compatible(value) for key, value in data.items()}
+
+        if isinstance(data, (list, tuple, set)):
+            return [self._to_json_compatible(item) for item in data]
+
+        return str(data)

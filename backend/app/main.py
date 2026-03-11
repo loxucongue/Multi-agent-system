@@ -53,11 +53,20 @@ app.include_router(admin_logs_router, prefix="/admin/logs", tags=["admin-logs"])
 app.include_router(admin_coze_logs_router, prefix="/admin/coze-logs", tags=["admin-coze-logs"])
 app.include_router(admin_config_router, prefix="/admin/config", tags=["admin-config"])
 
-cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
+def _normalize_origin(origin: str) -> str:
+    return origin.strip().strip("\"'").rstrip("/")
+
+
+cors_origins = [
+    normalized
+    for raw in settings.CORS_ORIGINS.split(",")
+    if (normalized := _normalize_origin(raw))
+]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    allow_origin_regex=settings.CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
