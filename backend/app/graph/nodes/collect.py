@@ -144,6 +144,7 @@ async def collect_requirements_node(state: GraphState) -> dict[str, Any]:
         user_message=user_message,
         profile=profile,
         missing_slots=missing_slots,
+        conversation_summary=str(state.get("conversation_summary") or "") or None,
     )
 
     updated_profile = _apply_suggested_profile_patch(profile, llm_result.get("suggested_state_patch"))
@@ -253,6 +254,7 @@ async def _generate_collect_questions(
     user_message: str,
     profile: UserProfile,
     missing_slots: list[str],
+    conversation_summary: str | None = None,
 ) -> dict[str, Any]:
     llm_client, should_close = _resolve_llm_client()
     try:
@@ -260,6 +262,7 @@ async def _generate_collect_questions(
             user_message=user_message,
             user_profile=profile.model_dump(),
             missing_slots=missing_slots,
+            conversation_summary=conversation_summary,
         )
         result = await llm_client.chat_json(
             messages=messages,

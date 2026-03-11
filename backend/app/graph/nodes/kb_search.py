@@ -71,6 +71,7 @@ async def routes_kb_search_node(state: GraphState) -> dict[str, Any]:
                     attempt=attempt,
                     previous_query=previous_query,
                     previous_result_summary=previous_result_summary,
+                    conversation_summary=str(state.get("conversation_summary") or "") or None,
                 )
                 if not query:
                     query = _fallback_query_for_attempt(profile, attempt, previous_query)
@@ -153,6 +154,7 @@ async def _generate_route_query(
     attempt: int,
     previous_query: str | None,
     previous_result_summary: str | None,
+    conversation_summary: str | None = None,
 ) -> str | None:
     if not degradation_policy.llm_available:
         _LOGGER.info("kb_query_gen skipped: LLM circuit breaker open, attempt=%s", attempt)
@@ -165,12 +167,13 @@ async def _generate_route_query(
             attempt=attempt,
             previous_query=previous_query,
             previous_result_summary=previous_result_summary,
+            conversation_summary=conversation_summary,
         )
         text = await llm_client.chat(messages=messages, temperature=0.1, max_tokens=96)
-        degradation_policy.llm_breaker.record_success()
+        await degradation_policy.llm_breaker.record_success()
         return _normalize_query(text)
     except Exception as exc:
-        degradation_policy.llm_breaker.record_failure()
+        await degradation_policy.llm_breaker.record_failure()
         _LOGGER.warning("route kb query generation failed attempt=%s: %s", attempt, exc)
         return None
 

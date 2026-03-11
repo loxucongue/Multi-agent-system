@@ -13,10 +13,12 @@ from app.graph.nodes.chitchat import chitchat_node
 from app.graph.nodes.collect import collect_requirements_node
 from app.graph.nodes.compare import compare_node
 from app.graph.nodes.db_detail import route_db_detail_node
+from app.graph.nodes.dispatcher import dispatcher_node
 from app.graph.nodes.external import external_api_node
 from app.graph.nodes.followup import route_followup_node
 from app.graph.nodes.kb_search import routes_kb_search_node
 from app.graph.nodes.lead_check import lead_signal_check
+from app.graph.nodes.planner import planner_node
 from app.graph.nodes.price import price_schedule_node
 from app.graph.nodes.rematch import rematch_reset_node
 from app.graph.nodes.response import response_generation_node
@@ -46,42 +48,61 @@ NODE_CHITCHAT = "chitchat"
 NODE_RESPONSE = "response"
 NODE_LEAD_CHECK = "lead_check"
 NODE_STATE_UPDATE = "state_update"
+NODE_PLANNER = "planner"
+NODE_DISPATCHER = "dispatcher"
 _MAX_EVENTS_PER_RUN = 1000
 
 
-def check_slots_ready(state: GraphState) -> str:
-    """Route collect node output by slot sufficiency."""
+_TASK_NODE_MAP: dict[str, str] = {
+    "collect": NODE_COLLECT,
+    "kb_search": NODE_KB_SEARCH,
+    "select": NODE_SELECT,
+    "db_detail": NODE_DB_DETAIL,
+    "followup": NODE_FOLLOWUP,
+    "price": NODE_PRICE,
+    "visa": NODE_VISA,
+    "external": NODE_EXTERNAL,
+    "rematch": NODE_REMATCH,
+    "compare": NODE_COMPARE,
+    "chitchat": NODE_CHITCHAT,
+}
+
+
+def _dispatch_task(state: GraphState) -> str:
+    """Route to next execution node based on task_plan[task_cursor]."""
+
+    plan = state.get("task_plan") or []
+    cursor = state.get("task_cursor", 0)
+    if cursor >= len(plan):
+        return NODE_RESPONSE
+    node_name = str(plan[cursor].get("node", ""))
+    return _TASK_NODE_MAP.get(node_name, NODE_RESPONSE)
+
+
+def _after_collect_in_plan(state: GraphState) -> str:
+    """Route collect output: advance plan if slots ready, else respond."""
 
     if state.get("slots_ready", False):
-        return NODE_KB_SEARCH
+        return NODE_DISPATCHER
     return NODE_RESPONSE
 
 
-def _route_after_rematch(state: GraphState) -> str:
+def _after_rematch_in_plan(state: GraphState) -> str:
+    """Route rematch output: respond if human needed, else advance plan."""
+
     if state.get("request_human"):
         return NODE_RESPONSE
-    return NODE_COLLECT
-
-
-def _route_by_intent(state: GraphState) -> str:
-    intent = str(state.get("last_intent") or "route_recommend")
-    mapping = {
-        "route_recommend": NODE_COLLECT,
-        "route_followup": NODE_FOLLOWUP,
-        "price_schedule": NODE_PRICE,
-        "visa": NODE_VISA,
-        "external_info": NODE_EXTERNAL,
-        "rematch": NODE_REMATCH,
-        "compare": NODE_COMPARE,
-        "chitchat": NODE_CHITCHAT,
-    }
-    return mapping.get(intent, NODE_COLLECT)
+    return NODE_DISPATCHER
 
 
 def _build_workflow() -> StateGraph:
+    """Build the planner-dispatcher graph with execution node pool."""
+
     workflow = StateGraph(GraphState)
 
     workflow.add_node(NODE_ROUTER, router_intent_node)
+    workflow.add_node(NODE_PLANNER, planner_node)
+    workflow.add_node(NODE_DISPATCHER, dispatcher_node)
     workflow.add_node(NODE_COLLECT, collect_requirements_node)
     workflow.add_node(NODE_KB_SEARCH, routes_kb_search_node)
     workflow.add_node(NODE_SELECT, select_candidates_node)
@@ -97,51 +118,50 @@ def _build_workflow() -> StateGraph:
     workflow.add_node(NODE_LEAD_CHECK, lead_signal_check)
     workflow.add_node(NODE_STATE_UPDATE, state_update_node)
 
+    # Entry: START → Router → Planner
     workflow.add_edge(START, NODE_ROUTER)
+    workflow.add_edge(NODE_ROUTER, NODE_PLANNER)
 
-    workflow.add_conditional_edges(
-        NODE_ROUTER,
-        _route_by_intent,
-        {
-            NODE_COLLECT: NODE_COLLECT,
-            NODE_FOLLOWUP: NODE_FOLLOWUP,
-            NODE_PRICE: NODE_PRICE,
-            NODE_VISA: NODE_VISA,
-            NODE_EXTERNAL: NODE_EXTERNAL,
-            NODE_REMATCH: NODE_REMATCH,
-            NODE_COMPARE: NODE_COMPARE,
-            NODE_CHITCHAT: NODE_CHITCHAT,
-        },
-    )
+    # Planner and Dispatcher both dispatch to the next task node
+    _all_task_targets = {
+        NODE_COLLECT: NODE_COLLECT,
+        NODE_KB_SEARCH: NODE_KB_SEARCH,
+        NODE_SELECT: NODE_SELECT,
+        NODE_DB_DETAIL: NODE_DB_DETAIL,
+        NODE_FOLLOWUP: NODE_FOLLOWUP,
+        NODE_PRICE: NODE_PRICE,
+        NODE_VISA: NODE_VISA,
+        NODE_EXTERNAL: NODE_EXTERNAL,
+        NODE_REMATCH: NODE_REMATCH,
+        NODE_COMPARE: NODE_COMPARE,
+        NODE_CHITCHAT: NODE_CHITCHAT,
+        NODE_RESPONSE: NODE_RESPONSE,
+    }
+    workflow.add_conditional_edges(NODE_PLANNER, _dispatch_task, _all_task_targets)
+    workflow.add_conditional_edges(NODE_DISPATCHER, _dispatch_task, _all_task_targets)
 
-    workflow.add_conditional_edges(
-        NODE_REMATCH,
-        _route_after_rematch,
-        {
-            NODE_RESPONSE: NODE_RESPONSE,
-            NODE_COLLECT: NODE_COLLECT,
-        },
-    )
+    # Collect: slots ready → dispatcher (advance), not ready → response (ask questions)
     workflow.add_conditional_edges(
         NODE_COLLECT,
-        check_slots_ready,
-        {
-            NODE_KB_SEARCH: NODE_KB_SEARCH,
-            NODE_RESPONSE: NODE_RESPONSE,
-        },
+        _after_collect_in_plan,
+        {NODE_DISPATCHER: NODE_DISPATCHER, NODE_RESPONSE: NODE_RESPONSE},
     )
 
-    workflow.add_edge(NODE_KB_SEARCH, NODE_SELECT)
-    workflow.add_edge(NODE_SELECT, NODE_DB_DETAIL)
-    workflow.add_edge(NODE_DB_DETAIL, NODE_RESPONSE)
+    # Rematch: request_human → response, else → dispatcher (advance)
+    workflow.add_conditional_edges(
+        NODE_REMATCH,
+        _after_rematch_in_plan,
+        {NODE_DISPATCHER: NODE_DISPATCHER, NODE_RESPONSE: NODE_RESPONSE},
+    )
 
-    workflow.add_edge(NODE_FOLLOWUP, NODE_RESPONSE)
-    workflow.add_edge(NODE_PRICE, NODE_RESPONSE)
-    workflow.add_edge(NODE_VISA, NODE_RESPONSE)
-    workflow.add_edge(NODE_EXTERNAL, NODE_RESPONSE)
-    workflow.add_edge(NODE_COMPARE, NODE_RESPONSE)
-    workflow.add_edge(NODE_CHITCHAT, NODE_RESPONSE)
+    # All other execution nodes → Dispatcher (to advance cursor)
+    for node in [
+        NODE_KB_SEARCH, NODE_SELECT, NODE_DB_DETAIL, NODE_FOLLOWUP,
+        NODE_PRICE, NODE_VISA, NODE_EXTERNAL, NODE_COMPARE, NODE_CHITCHAT,
+    ]:
+        workflow.add_edge(node, NODE_DISPATCHER)
 
+    # Response chain
     workflow.add_edge(NODE_RESPONSE, NODE_LEAD_CHECK)
     workflow.add_edge(NODE_LEAD_CHECK, NODE_STATE_UPDATE)
     workflow.add_edge(NODE_STATE_UPDATE, END)

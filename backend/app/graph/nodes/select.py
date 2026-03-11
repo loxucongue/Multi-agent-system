@@ -162,7 +162,7 @@ async def select_candidates_node(state: GraphState) -> dict[str, Any]:
             json_schema=_SELECT_SCHEMA,
             temperature=0.1,
         )
-        degradation_policy.llm_breaker.record_success()
+        await degradation_policy.llm_breaker.record_success()
 
         raw_ids = result.get("selected_route_ids") or []
         reasoning = str(result.get("reasoning") or "").strip()
@@ -180,7 +180,7 @@ async def select_candidates_node(state: GraphState) -> dict[str, Any]:
             reasoning[:200],
         )
     except Exception as exc:
-        degradation_policy.llm_breaker.record_failure()
+        await degradation_policy.llm_breaker.record_failure()
         _LOGGER.exception("select llm failed, fallback to rule scores: %s", exc)
         selected_ids = [item[0]["route_id"] for item in scored_candidates[:3] if item[1] > 0]
         reasoning = f"LLM fallback: rule_score select route_ids={selected_ids}"

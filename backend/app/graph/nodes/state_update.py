@@ -118,13 +118,13 @@ async def _compress_history(
                 {"role": "user", "content": f"{prefix}新增对话：\n{old_text}"},
             ]
             summary = await llm_client.chat(messages=messages, temperature=0.2, max_tokens=200)
-            degradation_policy.llm_breaker.record_success()
+            await degradation_policy.llm_breaker.record_success()
             return str(summary or "").strip() or _rule_based_compress(old_text, existing_summary)
         finally:
             if should_close:
                 await llm_client.aclose()
     except Exception as exc:
-        degradation_policy.llm_breaker.record_failure()
+        await degradation_policy.llm_breaker.record_failure()
         _LOGGER.warning("history compression LLM failed: %s", exc)
         return _rule_based_compress(old_text, existing_summary)
 

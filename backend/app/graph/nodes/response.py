@@ -204,9 +204,9 @@ async def _generate_text(
                     if inspect.isawaitable(maybe_result):
                         await maybe_result
                     streamed_via_callback = True
-        degradation_policy.llm_breaker.record_success()
+        await degradation_policy.llm_breaker.record_success()
     except Exception as exc:
-        degradation_policy.llm_breaker.record_failure()
+        await degradation_policy.llm_breaker.record_failure()
         _LOGGER.warning("response generation stream failed, fallback text used: %s", exc)
         return _fallback_text_from_tool_results(intent, tool_results), [], False, {
             "node": "response",
@@ -360,13 +360,13 @@ async def _generate_opening_line(intent: str, user_message: str, state: GraphSta
                 {"role": "user", "content": user_message[:200]},
             ]
             text = await llm_client.chat(messages=messages, temperature=0.7, max_tokens=50)
-            degradation_policy.llm_breaker.record_success()
+            await degradation_policy.llm_breaker.record_success()
             return str(text or "").strip()
         finally:
             if should_close:
                 await llm_client.aclose()
     except Exception as exc:
-        degradation_policy.llm_breaker.record_failure()
+        await degradation_policy.llm_breaker.record_failure()
         _LOGGER.warning("opening line generation failed: %s", exc)
         return _static_opening(intent)
 

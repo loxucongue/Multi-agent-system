@@ -13,68 +13,22 @@ _MAX_RETRIES_PER_TASK = 2
 
 
 async def dispatcher_node(state: GraphState) -> dict[str, Any]:
-    """Advance task_cursor or trigger retry based on current task result."""
+    """Advance task_cursor after the previous execution node completed."""
 
     task_plan = state.get("task_plan") or []
     cursor = state.get("task_cursor", 0)
-    task_results = dict(state.get("task_results") or {})
-    retry_counts = dict(state.get("retry_counts") or {})
 
     if cursor >= len(task_plan):
-        return {
-            "task_cursor": cursor,
-            "task_results": task_results,
-            "retry_counts": retry_counts,
-        }
+        _LOGGER.info("dispatcher: plan already complete (cursor=%s)", cursor)
+        return {"task_cursor": cursor}
 
-    current_task = task_plan[cursor]
-    current_node = current_task.get("node", "")
-    current_result = task_results.get(cursor)
-
-    if current_result is None:
-        return {
-            "task_cursor": cursor,
-            "task_results": task_results,
-            "retry_counts": retry_counts,
-        }
-
-    success = bool(current_result.get("success", True))
-    if success:
-        new_cursor = cursor + 1
-        _LOGGER.info(
-            "dispatcher: task %s/%s node=%s succeeded, advancing cursor",
-            cursor + 1, len(task_plan), current_node,
-        )
-        return {
-            "task_cursor": new_cursor,
-            "task_results": task_results,
-            "retry_counts": retry_counts,
-        }
-
-    current_retries = retry_counts.get(cursor, 0)
-    if current_retries < _MAX_RETRIES_PER_TASK:
-        retry_counts[cursor] = current_retries + 1
-        task_results.pop(cursor, None)
-        _LOGGER.info(
-            "dispatcher: task %s node=%s failed, retry %s/%s",
-            cursor + 1, current_node, current_retries + 1, _MAX_RETRIES_PER_TASK,
-        )
-        return {
-            "task_cursor": cursor,
-            "task_results": task_results,
-            "retry_counts": retry_counts,
-        }
-
-    _LOGGER.warning(
-        "dispatcher: task %s node=%s exhausted retries, advancing to next",
-        cursor + 1, current_node,
-    )
+    current_node = task_plan[cursor].get("node", "unknown")
     new_cursor = cursor + 1
-    return {
-        "task_cursor": new_cursor,
-        "task_results": task_results,
-        "retry_counts": retry_counts,
-    }
+    _LOGGER.info(
+        "dispatcher: task %s/%s node=%s done, cursor %s -> %s",
+        cursor + 1, len(task_plan), current_node, cursor, new_cursor,
+    )
+    return {"task_cursor": new_cursor}
 
 
 def get_current_task_node(state: GraphState) -> str:

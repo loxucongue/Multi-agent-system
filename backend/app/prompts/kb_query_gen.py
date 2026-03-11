@@ -15,6 +15,7 @@ async def build_kb_query_gen_prompt(
     attempt: int,
     previous_query: str | None,
     previous_result_summary: str | None,
+    conversation_summary: str | None = None,
 ) -> list[dict[str, str]]:
     """Build messages for generating a precise route KB query."""
 
@@ -40,6 +41,8 @@ async def build_kb_query_gen_prompt(
         f"## 用户当前消息\n{user_message}",
         f"## 当前尝试轮次\n第 {attempt} 轮",
     ]
+    if conversation_summary:
+        user_parts.append(f"## 历史对话摘要\n{conversation_summary}")
     if history_text:
         user_parts.append(f"## 最近对话\n{history_text}")
     if attempt > 1:

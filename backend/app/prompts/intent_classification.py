@@ -61,5 +61,6 @@ def _state_for_prompt(state: dict[str, Any]) -> dict[str, Any]:
         "user_profile",
         "last_intent",
         "followup_count",
+        "conversation_summary",
     }
     return {k: v for k, v in state.items() if k in keep_keys}

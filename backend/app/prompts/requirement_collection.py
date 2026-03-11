@@ -23,6 +23,7 @@ async def build_collect_prompt(
     user_message: str,
     user_profile: dict[str, Any],
     missing_slots: list[str],
+    conversation_summary: str | None = None,
 ) -> list[dict[str, str]]:
     """Build messages that guide the model to ask focused follow-up questions."""
 
@@ -38,8 +39,10 @@ async def build_collect_prompt(
         f"## 用户最新消息\n{user_message}\n\n"
         f"## 当前用户画像\n{json.dumps(user_profile, ensure_ascii=False, default=str)}\n\n"
         f"## 缺失槽位及说明\n{slot_detail}\n\n"
-        "请按要求只输出 JSON，不要输出其他文字。"
     )
+    if conversation_summary:
+        user_prompt += f"## 历史摘要\n{conversation_summary}\n\n"
+    user_prompt += "请按要求只输出 JSON，不要输出其他文字。"
 
     return [
         {"role": "system", "content": system_prompt},
