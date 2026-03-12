@@ -523,6 +523,18 @@ class RouteCreateRequest(BaseModel):
     sort_weight: int = 0
 
 
+class RouteUpdateRequest(BaseModel):
+    """更新单条路线请求。"""
+
+    name: str | None = Field(None, min_length=1, max_length=200)
+    supplier: str | None = Field(None, min_length=1, max_length=100)
+    summary: str | None = None
+    doc_url: str | None = Field(None, min_length=1, max_length=500)
+    features: str | None = None
+    is_hot: bool | None = None
+    sort_weight: int | None = None
+
+
 class RouteCreateResponse(BaseModel):
     """创建路线响应。"""
 

@@ -21,6 +21,7 @@ from app.models.schemas import (
     RouteCreateRequest,
     RouteCreateResponse,
     RouteDetail,
+    RouteUpdateRequest,
     ScheduleInfo,
     ScheduleUpdateRequest,
 )
@@ -214,14 +215,10 @@ async def get_route(route_id: int) -> RouteDetail:
 
 
 @router.put("/{route_id}", response_model=RouteDetail)
-async def update_route(route_id: int, body: dict[str, Any]) -> RouteDetail:
+async def update_route(route_id: int, body: RouteUpdateRequest) -> RouteDetail:
     """更新路线可编辑字段。"""
 
-    editable_fields = {
-        "name", "supplier", "summary", "doc_url", "features",
-        "is_hot", "sort_weight",
-    }
-    update_values = {k: v for k, v in body.items() if k in editable_fields}
+    update_values = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
     if not update_values:
         raise HTTPException(status_code=400, detail="no editable fields provided")
 
