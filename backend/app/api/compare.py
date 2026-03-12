@@ -166,6 +166,8 @@ def _to_compare_item(item: RouteBatchItem) -> CompareRouteItem:
         itinerary_style=itinerary_style,
         included_summary=included_summary,
         notice_summary=notice_summary,
+        age_limit=item.age_limit,
+        certificate_limit=item.certificate_limit,
         price_range=ComparePriceRange(
             min=float(item.pricing.price_min) if item.pricing else 0.0,
             max=float(item.pricing.price_max) if item.pricing else 0.0,
@@ -269,6 +271,8 @@ def _serialize_route_for_ai(item: RouteBatchItem, title: str) -> str:
     notice = _truncate_text(item.notice, 300) or "暂无"
     features = str(item.features or "").strip() or "暂无"
     cost_excluded = _truncate_text(item.cost_excluded, 300) or "暂无"
+    age_limit = str(item.age_limit or "").strip() or "暂无"
+    certificate_limit = str(item.certificate_limit or "").strip() or "暂无"
     itinerary = _truncate_text(_stringify_json_like(item.itinerary_json), 500) or "暂无"
     schedule = _truncate_text(_stringify_json_like(item.schedule.schedules_json if item.schedule else None), 300) or "暂无"
     return (
@@ -283,6 +287,8 @@ def _serialize_route_for_ai(item: RouteBatchItem, title: str) -> str:
         f"- 注意事项: {notice}\n"
         f"- 线路特色: {features}\n"
         f"- 费用不含: {cost_excluded}\n"
+        f"- 年龄限制: {age_limit}\n"
+        f"- 证件要求: {certificate_limit}\n"
         f"- 价格区间: {_format_price_range(item)}\n"
         f"- 团期信息: {schedule}"
     )
