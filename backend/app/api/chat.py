@@ -21,6 +21,8 @@ from app.utils.logger import get_logger
 router = APIRouter()
 _LOGGER = get_logger(__name__)
 
+_background_tasks: set[asyncio.Task] = set()
+
 _STREAM_TIMEOUT_SECONDS = 90
 _BLPOP_TIMEOUT_SECONDS = 5
 _MAX_EVENTS_PER_RUN = 1000
@@ -29,8 +31,6 @@ _MAX_EVENTS_PER_RUN = 1000
 @router.post("/send", response_model=ChatSendResponse)
 async def send_chat(req: ChatSendRequest) -> ChatSendResponse:
     """Accept one user message and trigger background graph execution."""
-
-    await services.initialize()
 
     if not await services.session_service.is_session_valid(req.session_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found or expired")
@@ -62,15 +62,18 @@ async def send_chat(req: ChatSendRequest) -> ChatSendResponse:
         await redis.set(f"done:{run_id}", "0", ex=300)
         handoff_lock = True
         try:
-            asyncio.create_task(
+            task = asyncio.create_task(
                 _background_run(
                     session_id=req.session_id,
                     message=req.message,
                     run_id=run_id,
                     trace_id=trace_id,
                     redis=redis,
-                )
+                ),
+                name=f"graph_run_{run_id}",
             )
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
         except Exception:
             handoff_lock = False
             raise
@@ -84,7 +87,6 @@ async def send_chat(req: ChatSendRequest) -> ChatSendResponse:
 async def stream_chat(run_id: str = Query(..., min_length=1)) -> StreamingResponse:
     """Stream graph events via server-sent events."""
 
-    await services.initialize()
     redis = services.redis
     if redis is None:
         raise HTTPException(

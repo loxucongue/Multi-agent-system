@@ -32,8 +32,6 @@ async def compare_routes(
 ) -> CompareData:
     """Build route comparison payload from explicit ids or session candidates."""
 
-    await services.initialize()
-
     if not await services.session_service.is_session_valid(session_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
 
@@ -84,8 +82,6 @@ async def compare_routes_ai_analysis(
     req: CompareRequest | None = Body(default=None),
 ) -> CompareAIAnalysisResponse:
     """Generate AI analysis using two full route contents."""
-
-    await services.initialize()
 
     if not await services.session_service.is_session_valid(session_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")

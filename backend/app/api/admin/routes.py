@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
+from pydantic import BaseModel
 from sqlalchemy import select, update, delete, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.models.database import Route, RoutePricing, RouteSchedule
@@ -30,6 +32,15 @@ from app.services.container import services
 from app.utils.security import get_current_admin
 
 router = APIRouter(dependencies=[Depends(get_current_admin)])
+
+
+class RouteListResponse(BaseModel):
+    """Paginated route list response."""
+
+    routes: list[RouteListItem] = []
+    total: int
+    page: int
+    page_size: int
 
 
 @router.post("/", response_model=RouteCreateResponse, status_code=status.HTTP_201_CREATED)
@@ -73,12 +84,12 @@ async def reparse_routes(req: ReparseRequest) -> ReparseResponse:
     return ReparseResponse(accepted=accepted, skipped=skipped)
 
 
-@router.get("/")
+@router.get("/", response_model=RouteListResponse)
 async def list_routes(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     keyword: str = Query("", max_length=100),
-) -> dict[str, Any]:
+) -> RouteListResponse:
     """分页查询路线列表（支持关键词搜索）。"""
 
     async with services.session_factory() as session:
@@ -107,7 +118,7 @@ async def list_routes(
         if r.pricing:
             item.pricing = PricingInfo.model_validate(r.pricing)
         items.append(item)
-    return {"routes": items, "total": total, "page": page, "page_size": page_size}
+    return RouteListResponse(routes=items, total=total, page=page, page_size=page_size)
 
 
 
@@ -220,11 +231,18 @@ async def update_route(route_id: int, body: RouteUpdateRequest) -> RouteDetail:
         raise HTTPException(status_code=400, detail="no editable fields provided")
 
     async with services.session_factory() as session:
-        stmt = update(Route).where(Route.id == route_id).values(**update_values)
-        result = await session.execute(stmt)
-        if result.rowcount == 0:
-            raise HTTPException(status_code=404, detail="route not found")
-        await session.commit()
+        try:
+            stmt = update(Route).where(Route.id == route_id).values(**update_values)
+            result = await session.execute(stmt)
+            if result.rowcount == 0:
+                raise HTTPException(status_code=404, detail="route not found")
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="doc_url already exists for another route",
+            )
 
     detail = await services.route_service.get_route_detail(route_id)
     if detail is None:
@@ -242,6 +260,13 @@ async def delete_route(route_id: int) -> None:
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="route not found")
         await session.commit()
+
+    if services.redis is not None:
+        try:
+            await services.redis.delete(f"route_price:{route_id}")
+            await services.redis.delete(f"route_parse:{route_id}")
+        except Exception:
+            pass
 
 
 @router.get("/{route_id}/parse-status")

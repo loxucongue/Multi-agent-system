@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import bcrypt
 from fastapi import Depends, HTTPException, status
@@ -55,7 +55,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     """Create a signed JWT access token."""
 
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(hours=_ACCESS_TOKEN_EXPIRE_HOURS))
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(hours=_ACCESS_TOKEN_EXPIRE_HOURS))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=_ALGORITHM)
 

@@ -14,7 +14,6 @@ router = APIRouter()
 async def create_session() -> SessionCreateResponse:
     """Create a new session and return the session id."""
 
-    await services.initialize()
     session_id = await services.session_service.create_session()
     return SessionCreateResponse(session_id=session_id)
 
@@ -22,8 +21,6 @@ async def create_session() -> SessionCreateResponse:
 @router.get("/{session_id}", response_model=SessionDetailResponse)
 async def get_session_detail(session_id: str) -> SessionDetailResponse:
     """Fetch session state and resolve related route cards for frontend."""
-
-    await services.initialize()
 
     state = await services.session_service.get_session_state(session_id)
     if state is None:
@@ -77,8 +74,6 @@ async def get_session_detail(session_id: str) -> SessionDetailResponse:
 @router.get("/{session_id}/route/{route_id}", response_model=RouteFullDetail)
 async def get_route_full_detail(session_id: str, route_id: int) -> RouteFullDetail:
     """Fetch full route detail + pricing + schedule for right detail panel."""
-
-    await services.initialize()
 
     session_state = await services.session_service.get_session_state(session_id)
     if session_state is None:

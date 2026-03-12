@@ -115,5 +115,9 @@ def _to_log_dict(log: AuditLog) -> dict[str, Any]:
         'error_stack': log.error_stack,
         'coze_logid': log.coze_logid,
         'coze_debug_url': log.coze_debug_url,
+        'parent_span_id': log.parent_span_id,
+        'span_type': log.span_type,
+        'prompt_version_id': log.prompt_version_id,
+        'is_degraded': log.is_degraded,
         'created_at': log.created_at.isoformat() if isinstance(log.created_at, datetime) else str(log.created_at),
     }

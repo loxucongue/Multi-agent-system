@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -47,7 +47,7 @@ class SessionService:
                 id=session_id,
                 state_json=state.model_dump(mode="json"),
                 state_version=state.state_version,
-                expires_at=datetime.utcnow() + timedelta(days=_SESSION_TTL_DAYS),
+                expires_at=datetime.now(timezone.utc) + timedelta(days=_SESSION_TTL_DAYS),
             )
             session.add(row)
 
@@ -96,7 +96,7 @@ class SessionService:
 
             row.state_json = next_state.model_dump(mode="json")
             row.state_version = next_state.state_version
-            row.expires_at = datetime.utcnow() + timedelta(days=_SESSION_TTL_DAYS)
+            row.expires_at = datetime.now(timezone.utc) + timedelta(days=_SESSION_TTL_DAYS)
 
             try:
                 await session.commit()
@@ -126,7 +126,7 @@ class SessionService:
 
             row.state_json = next_state.model_dump(mode="json")
             row.state_version = next_state.state_version
-            row.expires_at = datetime.utcnow() + timedelta(days=_SESSION_TTL_DAYS)
+            row.expires_at = datetime.now(timezone.utc) + timedelta(days=_SESSION_TTL_DAYS)
 
             try:
                 await session.commit()
@@ -211,7 +211,7 @@ class SessionService:
         return SessionState.model_validate(payload)
 
     def _is_expired(self, expires_at: datetime) -> bool:
-        return expires_at <= datetime.utcnow()
+        return expires_at <= datetime.now(timezone.utc).replace(tzinfo=None)
 
     def _deep_merge_dict(self, base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
         merged = dict(base)

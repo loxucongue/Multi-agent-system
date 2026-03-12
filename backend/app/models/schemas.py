@@ -539,6 +539,15 @@ class RouteUpdateRequest(BaseModel):
     features: str | None = None
     is_hot: bool | None = None
     sort_weight: int | None = None
+    tags: list | None = None
+    highlights: str | None = None
+    base_info: str | None = None
+    itinerary_json: Any | None = None
+    notice: str | None = None
+    included: str | None = None
+    cost_excluded: str | None = None
+    age_limit: str | None = None
+    certificate_limit: str | None = None
 
 
 class RouteCreateResponse(BaseModel):

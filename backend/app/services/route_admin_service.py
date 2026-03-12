@@ -262,11 +262,15 @@ class RouteAdminService:
             if not doc_url:
                 skipped.append({"route_id": rid, "reason": "route not found"})
                 continue
+            doc_url_stripped = doc_url.strip()
+            if not doc_url_stripped or doc_url_stripped.lower() in ("none", "null", "n/a"):
+                skipped.append({"route_id": rid, "reason": "invalid or empty doc_url"})
+                continue
             if not self._workflow or not self._settings.COZE_WF_ROUTE_PARSE_ID:
                 skipped.append({"route_id": rid, "reason": "workflow not configured"})
                 continue
 
-            self._safe_create_parse_task(rid, doc_url)
+            self._safe_create_parse_task(rid, doc_url_stripped)
             accepted.append(rid)
 
         return accepted, skipped
