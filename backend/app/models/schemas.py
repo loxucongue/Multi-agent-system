@@ -1,4 +1,4 @@
-﻿"""Pydantic schemas for Coze services and route data models."""
+"""Pydantic schemas for Coze services and route data models."""
 
 from __future__ import annotations
 
@@ -308,12 +308,6 @@ class RouteDetail(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class RouteListItem(RouteDetail):
-    """路线列表项（含 pricing 摘要）。"""
-
-    pricing: PricingInfo | None = None
-
-
 class PricingInfo(BaseModel):
     """价格快照。"""
 
@@ -330,6 +324,12 @@ class ScheduleInfo(BaseModel):
     schedules_json: Any
     schedule_updated_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+class RouteListItem(RouteDetail):
+    """路线列表项（含 pricing 摘要）。"""
+
+    pricing: PricingInfo | None = None
 
 
 class RoutePriceSchedule(BaseModel):
