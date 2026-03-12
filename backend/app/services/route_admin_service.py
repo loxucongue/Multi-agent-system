@@ -11,6 +11,7 @@ from typing import Any
 
 from redis import asyncio as aioredis
 from sqlalchemy import select, update, delete, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config.settings import Settings
@@ -70,40 +71,52 @@ class RouteAdminService:
 
         async with self._session_factory() as session:
             session.add(route)
-            await session.flush()
-            route_id = int(route.id)
+            try:
+                await session.flush()
+                route_id = int(route.id)
 
-            if req.price_min is not None and req.price_max is not None:
-                session.add(
-                    RoutePricing(
-                        route_id=route_id,
-                        price_min=req.price_min,
-                        price_max=req.price_max,
-                        currency=req.currency or "CNY",
-                    )
-                )
-
-            if req.schedules_json is not None:
-                schedules_payload = req.schedules_json
-                if isinstance(schedules_payload, str):
-                    raw_value = schedules_payload.strip()
-                    if raw_value:
-                        try:
-                            schedules_payload = json.loads(raw_value)
-                        except json.JSONDecodeError:
-                            schedules_payload = [{"raw": schedules_payload}]
-                    else:
-                        schedules_payload = None
-
-                if schedules_payload not in (None, "", [], {}):
+                if req.price_min is not None and req.price_max is not None:
                     session.add(
-                        RouteSchedule(
+                        RoutePricing(
                             route_id=route_id,
-                            schedules_json=schedules_payload,
+                            price_min=req.price_min,
+                            price_max=req.price_max,
+                            currency=req.currency or "CNY",
                         )
                     )
 
-            await session.commit()
+                if req.schedules_json is not None:
+                    schedules_payload = req.schedules_json
+                    if isinstance(schedules_payload, str):
+                        raw_value = schedules_payload.strip()
+                        if raw_value:
+                            try:
+                                schedules_payload = json.loads(raw_value)
+                            except json.JSONDecodeError:
+                                schedules_payload = [{"raw": schedules_payload}]
+                        else:
+                            schedules_payload = None
+
+                    if schedules_payload not in (None, "", [], {}):
+                        session.add(
+                            RouteSchedule(
+                                route_id=route_id,
+                                schedules_json=schedules_payload,
+                            )
+                        )
+
+                await session.commit()
+            except IntegrityError as exc:
+                message = str(exc)
+                message_lower = message.lower()
+                if (
+                    "duplicate entry" in message_lower
+                    or "uq_routes_doc_url" in message_lower
+                    or "doc_url" in message_lower
+                ):
+                    await session.rollback()
+                    raise ValueError(f"文档链接已存在: {req.doc_url}") from exc
+                raise
             await session.refresh(route)
 
         # Trigger async document parsing
@@ -225,7 +238,11 @@ class RouteAdminService:
                 created.append(resp)
             except Exception as exc:
                 self._logger.warning("batch create failed row=%d name=%s: %s", idx, req.name, exc)
-                failed.append({"name": req.name, "doc_url": req.doc_url, "error": str(exc)})
+                error_message = str(exc)
+                if isinstance(exc, ValueError) and "文档链接已存在" in error_message:
+                    failed.append({"name": req.name, "doc_url": req.doc_url, "error": error_message})
+                else:
+                    failed.append({"name": req.name, "doc_url": req.doc_url, "error": str(exc)})
 
         return created, failed
 
