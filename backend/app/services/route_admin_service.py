@@ -121,7 +121,7 @@ class RouteAdminService:
 
         # Trigger async document parsing
         if self._workflow and self._settings.COZE_WF_ROUTE_PARSE_ID:
-            asyncio.create_task(self._call_parse_and_update(route_id, req.doc_url))
+            self._safe_create_parse_task(route_id, req.doc_url)
 
         return RouteCreateResponse(route_id=route_id, name=req.name, parse_status="pending")
 
@@ -268,7 +268,7 @@ class RouteAdminService:
                 skipped.append({"route_id": rid, "reason": "workflow not configured"})
                 continue
 
-            asyncio.create_task(self._call_parse_and_update(rid, doc_url))
+            self._safe_create_parse_task(rid, doc_url)
             accepted.append(rid)
 
         return accepted, skipped
@@ -296,6 +296,26 @@ class RouteAdminService:
     # ---------------------------------------------
     # Internal: parse and update
     # ---------------------------------------------
+
+    def _safe_create_parse_task(self, route_id: int, doc_url: str) -> None:
+        """Create a background parse task and bind done callback for error handling."""
+
+        task = asyncio.create_task(
+            self._call_parse_and_update(route_id, doc_url),
+            name=f"parse_route_{route_id}",
+        )
+        task.add_done_callback(self._on_parse_task_done)
+
+    def _on_parse_task_done(self, task: asyncio.Task[Any]) -> None:
+        """Handle background task completion to avoid silent task exceptions."""
+
+        if task.cancelled():
+            self._logger.warning("parse task cancelled: %s", task.get_name())
+            return
+
+        exc = task.exception()
+        if exc is not None:
+            self._logger.error("parse task %s failed: %s", task.get_name(), exc, exc_info=exc)
 
     async def _call_parse_and_update(self, route_id: int, doc_url: str) -> None:
         """Call Coze parse workflow and write result back to database."""
