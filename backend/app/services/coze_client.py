@@ -210,6 +210,7 @@ class CozeClient:
         extra_headers: dict[str, str] | None = None,
         params: dict[str, Any] | None = None,
         log_context: dict[str, Any] | None = None,
+        timeout: float | None = None,
     ) -> dict[str, Any]:
         """Send a Coze API request with OAuth token and unified response handling."""
 
@@ -241,6 +242,7 @@ class CozeClient:
                     headers=headers,
                     json=body,
                     params=params,
+                    timeout=httpx.Timeout(timeout) if timeout is not None else None,
                 )
                 response.raise_for_status()
                 payload = response.json()

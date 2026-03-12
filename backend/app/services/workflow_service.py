@@ -102,6 +102,7 @@ class WorkflowService:
             workflow_id=self._settings.COZE_WF_ROUTE_PARSE_ID,
             parameters={"input": doc_url},
             trace_id=trace_id,
+            timeout=90.0,
         )
 
         return self._parse_route_parse_result(payload, trace_id=trace_id)
@@ -116,6 +117,7 @@ class WorkflowService:
         parameters: dict[str, Any],
         trace_id: str,
         session_id: str = "",
+        timeout: float | None = None,
     ) -> dict[str, Any]:
         """Execute a Coze workflow and handle interrupt_data / logging."""
 
@@ -135,6 +137,7 @@ class WorkflowService:
                 "workflow_id": workflow_id,
                 "call_type": self._infer_call_type(workflow_id),
             },
+            timeout=timeout,
         )
 
         # ── 记录 debug_url 和 usage ──
