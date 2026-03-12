@@ -420,17 +420,63 @@ class WorkflowService:
             inner = parsed["output"]
 
         tags_raw = inner.get("index_tags", [])
-        if isinstance(tags_raw, str):
-            tags_raw = [t.strip() for t in tags_raw.split(",") if t.strip()]
+        tags = self._normalize_index_tags(tags_raw)
 
         return RouteParseResult(
-            basic_info=str(inner.get("basic_info") or ""),
-            highlights=str(inner.get("highlights") or ""),
-            index_tags=tags_raw if isinstance(tags_raw, list) else [],
+            basic_info=self._normalize_text_block(inner.get("basic_info")),
+            highlights=self._normalize_text_block(inner.get("highlights")),
+            index_tags=tags,
             itinerary_days=inner.get("itinerary_days"),
-            notices=str(inner.get("notices") or ""),
-            cost_included=str(inner.get("cost_included") or ""),
-            cost_excluded=str(inner.get("cost_excluded") or ""),
-            age_limit=str(inner.get("age_limit") or ""),
-            certificate_limit=str(inner.get("certificate_limit") or ""),
+            notices=self._normalize_text_block(inner.get("notices")),
+            cost_included=self._normalize_text_block(inner.get("cost_included")),
+            cost_excluded=self._normalize_text_block(inner.get("cost_excluded")),
+            age_limit=self._normalize_text_block(inner.get("age_limit")),
+            certificate_limit=self._normalize_text_block(inner.get("certificate_limit")),
         )
+
+    def _normalize_text_block(self, value: Any) -> str:
+        """Normalize route-parse field value into displayable text."""
+
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, list):
+            parts = [self._normalize_text_block(item) for item in value]
+            return "\n".join(part for part in parts if part)
+        if isinstance(value, dict):
+            try:
+                return json.dumps(value, ensure_ascii=False)
+            except TypeError:
+                return str(value).strip()
+        return str(value).strip()
+
+    def _normalize_index_tags(self, value: Any) -> list[str]:
+        """Normalize index_tags from list or JSON string to string list."""
+
+        if isinstance(value, list):
+            return [str(tag).strip() for tag in value if str(tag).strip()]
+
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return []
+
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                parsed = None
+
+            if isinstance(parsed, list):
+                return [str(tag).strip() for tag in parsed if str(tag).strip()]
+
+            cleaned = text.strip().strip("[]")
+            tokens = re.split(r"[，,;\n]+", cleaned)
+            normalized: list[str] = []
+            for token in tokens:
+                tag = token.strip().strip("\"'").strip()
+                if tag:
+                    normalized.append(tag)
+            return normalized
+
+        return []
