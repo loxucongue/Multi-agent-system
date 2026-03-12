@@ -18,6 +18,7 @@ from app.models.schemas import (
     ReparseRequest,
     ReparseResponse,
     RouteFullDetail,
+    RouteListItem,
     RouteCreateRequest,
     RouteCreateResponse,
     RouteDetail,
@@ -92,6 +93,7 @@ async def list_routes(
 
         query_stmt = (
             base_stmt
+            .options(selectinload(Route.pricing))
             .order_by(Route.sort_weight.desc(), Route.id.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
@@ -99,7 +101,12 @@ async def list_routes(
         result = await session.execute(query_stmt)
         routes = result.scalars().all()
 
-    items = [RouteDetail.model_validate(r) for r in routes]
+    items: list[RouteListItem] = []
+    for r in routes:
+        item = RouteListItem.model_validate(r)
+        if r.pricing:
+            item.pricing = PricingInfo.model_validate(r.pricing)
+        items.append(item)
     return {"routes": items, "total": total, "page": page, "page_size": page_size}
 
 

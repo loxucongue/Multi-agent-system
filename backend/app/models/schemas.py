@@ -308,6 +308,12 @@ class RouteDetail(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RouteListItem(RouteDetail):
+    """路线列表项（含 pricing 摘要）。"""
+
+    pricing: PricingInfo | None = None
+
+
 class PricingInfo(BaseModel):
     """价格快照。"""
 
