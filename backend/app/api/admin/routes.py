@@ -110,18 +110,6 @@ async def list_routes(
     return {"routes": items, "total": total, "page": page, "page_size": page_size}
 
 
-@router.get("/{route_id}/full", response_model=RouteFullDetail)
-async def get_route_full(route_id: int) -> RouteFullDetail:
-    """查询完整路线详情（含 pricing + schedule）。"""
-
-    rows = await services.route_service.get_routes_batch([route_id])
-    if not rows:
-        raise HTTPException(status_code=404, detail="route not found")
-
-    item = rows[0]
-    route_detail = RouteDetail.model_validate(item.model_dump(exclude={"pricing", "schedule"}))
-    return RouteFullDetail(route=route_detail, pricing=item.pricing, schedule=item.schedule)
-
 
 @router.put("/{route_id}/pricing", response_model=PricingInfo)
 async def upsert_route_pricing(route_id: int, req: PricingUpdateRequest) -> PricingInfo:
