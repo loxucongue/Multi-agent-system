@@ -117,8 +117,6 @@ class RouteAdminService:
                     await session.rollback()
                     raise ValueError(f"文档链接已存在: {req.doc_url}") from exc
                 raise
-            await session.refresh(route)
-
         # Trigger async document parsing
         if self._workflow and self._settings.COZE_WF_ROUTE_PARSE_ID:
             self._safe_create_parse_task(route_id, req.doc_url)
