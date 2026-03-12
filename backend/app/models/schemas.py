@@ -514,6 +514,10 @@ class RouteCreateRequest(BaseModel):
     supplier: str = Field(..., min_length=1, max_length=100)
     summary: str = ""
     doc_url: str = Field(..., min_length=1, max_length=500)
+    price_min: Decimal | None = None
+    price_max: Decimal | None = None
+    currency: str = "CNY"
+    schedules_json: Any = None
     features: str | None = None
     is_hot: bool = False
     sort_weight: int = 0
@@ -535,6 +539,10 @@ class BatchRoutePreviewRow(BaseModel):
     supplier: str
     summary: str = ""
     doc_url: str
+    price_min: Decimal | None = None
+    price_max: Decimal | None = None
+    currency: str = "CNY"
+    schedules_json: Any = None
     features: str | None = None
     is_hot: bool = False
     sort_weight: int = 0

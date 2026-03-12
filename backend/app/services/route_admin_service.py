@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from decimal import Decimal
 from io import BytesIO
 from typing import Any
 
@@ -13,7 +14,7 @@ from sqlalchemy import select, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config.settings import Settings
-from app.models.database import Route
+from app.models.database import Route, RoutePricing, RouteSchedule
 from app.models.schemas import (
     BatchRoutePreviewRow,
     RouteCreateRequest,
@@ -28,7 +29,7 @@ _PARSE_TTL = 3600
 
 
 class RouteAdminService:
-    """路线管理服务，包含创建、批量导入、文档解析等功能。"""
+    """Route admin service including create, batch import, and document parse."""
 
     def __init__(
         self,
@@ -44,12 +45,12 @@ class RouteAdminService:
         self._logger = get_logger(__name__)
         self._semaphore = asyncio.Semaphore(settings.COZE_PARSE_CONCURRENCY)
 
-    # ─────────────────────────────────────────────
-    #  Public methods
-    # ─────────────────────────────────────────────
+    # ---------------------------------------------
+    # Public methods
+    # ---------------------------------------------
 
     async def create_route(self, req: RouteCreateRequest) -> RouteCreateResponse:
-        """创建单条路线并异步触发文档解析。"""
+        """Create a single route and asynchronously trigger document parsing."""
 
         route = Route(
             name=req.name,
@@ -69,20 +70,50 @@ class RouteAdminService:
 
         async with self._session_factory() as session:
             session.add(route)
-            await session.commit()
-            await session.refresh(route)
+            await session.flush()
             route_id = int(route.id)
 
-        # 异步触发文档解析
+            if req.price_min is not None and req.price_max is not None:
+                session.add(
+                    RoutePricing(
+                        route_id=route_id,
+                        price_min=req.price_min,
+                        price_max=req.price_max,
+                        currency=req.currency or "CNY",
+                    )
+                )
+
+            if req.schedules_json is not None:
+                schedules_payload = req.schedules_json
+                if isinstance(schedules_payload, str):
+                    raw_value = schedules_payload.strip()
+                    if raw_value:
+                        try:
+                            schedules_payload = json.loads(raw_value)
+                        except json.JSONDecodeError:
+                            schedules_payload = [{"raw": schedules_payload}]
+                    else:
+                        schedules_payload = None
+
+                if schedules_payload not in (None, "", [], {}):
+                    session.add(
+                        RouteSchedule(
+                            route_id=route_id,
+                            schedules_json=schedules_payload,
+                        )
+                    )
+
+            await session.commit()
+            await session.refresh(route)
+
+        # Trigger async document parsing
         if self._workflow and self._settings.COZE_WF_ROUTE_PARSE_ID:
-            asyncio.create_task(
-                self._call_parse_and_update(route_id, req.doc_url)
-            )
+            asyncio.create_task(self._call_parse_and_update(route_id, req.doc_url))
 
         return RouteCreateResponse(route_id=route_id, name=req.name, parse_status="pending")
 
     async def parse_excel(self, file_bytes: bytes, filename: str) -> list[BatchRoutePreviewRow]:
-        """解析 Excel 文件，返回预览行列表。"""
+        """Parse Excel file and return preview rows."""
 
         import openpyxl
 
@@ -100,22 +131,52 @@ class RouteAdminService:
                         header_map[str(cell).strip().lower()] = col_idx
                 continue
 
-            def _cell(name: str) -> str:
+            def _cell_raw(name: str) -> Any:
                 idx = header_map.get(name)
-                if idx is None or idx - 1 >= len(row):
+                if idx is None or idx >= len(row):
+                    return None
+                return row[idx]
+
+            def _cell(name: str) -> str:
+                val = _cell_raw(name)
+                if val is None:
                     return ""
-                val = row[idx - 1]
-                return str(val).strip() if val is not None else ""
+                return str(val).strip()
 
-            name = _cell("name") or _cell("线路名称") or _cell("路线名称")
-            supplier = _cell("supplier") or _cell("供应商")
-            summary = _cell("summary") or _cell("简介") or _cell("概述")
-            doc_url = _cell("doc_url") or _cell("文档链接") or _cell("文档url")
-            features = _cell("features") or _cell("特色") or None
-            is_hot_str = _cell("is_hot") or _cell("热门")
-            sort_weight_str = _cell("sort_weight") or _cell("排序权重")
+            def _first_non_empty(*names: str) -> str:
+                for name in names:
+                    value = _cell(name)
+                    if value:
+                        return value
+                return ""
 
-            is_hot = is_hot_str.lower() in ("1", "true", "yes", "是")
+            def _parse_decimal(*names: str) -> Decimal | None:
+                for name in names:
+                    raw_value = _cell_raw(name)
+                    if raw_value is None:
+                        continue
+                    text = str(raw_value).strip()
+                    if not text:
+                        continue
+                    try:
+                        return Decimal(text)
+                    except Exception:
+                        continue
+                return None
+
+            name = _first_non_empty("name", "\u7ebf\u8def\u540d\u79f0", "\u8def\u7ebf\u540d\u79f0")
+            supplier = _first_non_empty("supplier", "\u4f9b\u5e94\u5546")
+            summary = _first_non_empty("summary", "\u7b80\u4ecb", "\u6982\u8ff0")
+            doc_url = _first_non_empty("doc_url", "\u6587\u6863\u94fe\u63a5", "\u6587\u6863url")
+            features = _first_non_empty("features", "\u7279\u8272") or None
+            is_hot_str = _first_non_empty("is_hot", "\u70ed\u95e8")
+            sort_weight_str = _first_non_empty("sort_weight", "\u6392\u5e8f\u6743\u91cd")
+            price_min = _parse_decimal("price_min", "\u6700\u4f4e\u4ef7", "\u4ef7\u683c\u4e0b\u9650")
+            price_max = _parse_decimal("price_max", "\u6700\u9ad8\u4ef7", "\u4ef7\u683c\u4e0a\u9650")
+            currency = _first_non_empty("currency", "\u5e01\u79cd") or "CNY"
+            schedules_json = _first_non_empty("schedules_json", "\u56e2\u671f", "\u6392\u671f") or None
+
+            is_hot = is_hot_str.lower() in ("1", "true", "yes", "\u662f")
             try:
                 sort_weight = int(sort_weight_str) if sort_weight_str else 0
             except ValueError:
@@ -123,11 +184,11 @@ class RouteAdminService:
 
             error: str | None = None
             if not name:
-                error = "缺少线路名称"
+                error = "\u7f3a\u5c11\u7ebf\u8def\u540d\u79f0"
             elif not supplier:
-                error = "缺少供应商"
+                error = "\u7f3a\u5c11\u4f9b\u5e94\u5546"
             elif not doc_url:
-                error = "缺少文档链接"
+                error = "\u7f3a\u5c11\u6587\u6863\u94fe\u63a5"
 
             rows.append(
                 BatchRoutePreviewRow(
@@ -136,6 +197,10 @@ class RouteAdminService:
                     supplier=supplier,
                     summary=summary,
                     doc_url=doc_url,
+                    price_min=price_min,
+                    price_max=price_max,
+                    currency=currency,
+                    schedules_json=schedules_json,
                     features=features if features else None,
                     is_hot=is_hot,
                     sort_weight=sort_weight,
@@ -149,7 +214,7 @@ class RouteAdminService:
     async def batch_create_routes(
         self, requests: list[RouteCreateRequest]
     ) -> tuple[list[RouteCreateResponse], list[dict[str, Any]]]:
-        """批量创建路线，返回 (成功列表, 失败列表)。"""
+        """Batch create routes and return (created list, failed list)."""
 
         created: list[RouteCreateResponse] = []
         failed: list[dict[str, Any]] = []
@@ -165,7 +230,7 @@ class RouteAdminService:
         return created, failed
 
     async def reparse_routes(self, route_ids: list[int]) -> tuple[list[int], list[dict[str, Any]]]:
-        """对已有路线重新触发文档解析，返回 (已接受列表, 跳过列表)。"""
+        """Trigger reparse for existing routes and return (accepted, skipped)."""
 
         accepted: list[int] = []
         skipped: list[dict[str, Any]] = []
@@ -192,7 +257,7 @@ class RouteAdminService:
         return accepted, skipped
 
     async def get_parse_status(self, route_id: int) -> dict[str, Any]:
-        """查询路线解析状态 (从 Redis 读取)。"""
+        """Read route parse status from Redis."""
 
         if self._redis is None:
             return {"route_id": route_id, "status": "unknown", "message": "redis unavailable"}
@@ -211,22 +276,22 @@ class RouteAdminService:
         except json.JSONDecodeError:
             return {"route_id": route_id, "status": "unknown", "message": "invalid data"}
 
-    # ─────────────────────────────────────────────
-    #  Internal: parse and update
-    # ─────────────────────────────────────────────
+    # ---------------------------------------------
+    # Internal: parse and update
+    # ---------------------------------------------
 
     async def _call_parse_and_update(self, route_id: int, doc_url: str) -> None:
-        """调用 Coze 解析工作流并将结果回写到 DB。"""
+        """Call Coze parse workflow and write result back to database."""
 
         trace_id = str(uuid.uuid4())
-        await self._set_parse_status(route_id, "parsing", "工作流执行中")
+        await self._set_parse_status(route_id, "parsing", "\u5de5\u4f5c\u6d41\u6267\u884c\u4e2d")
 
         try:
             async with self._semaphore:
                 result = await self._workflow.run_route_parse(doc_url, trace_id=trace_id)
 
             await self._apply_parse_result(route_id, result)
-            await self._set_parse_status(route_id, "done", "解析完成")
+            await self._set_parse_status(route_id, "done", "\u89e3\u6790\u5b8c\u6210")
             self._logger.info("route parse done route_id=%d trace_id=%s", route_id, trace_id)
 
         except Exception as exc:
@@ -234,7 +299,7 @@ class RouteAdminService:
             await self._set_parse_status(route_id, "failed", str(exc)[:500])
 
     async def _apply_parse_result(self, route_id: int, result: RouteParseResult) -> None:
-        """将解析结果的 9 个字段回写到 routes 表（仅覆盖工作流字段）。"""
+        """Apply parse result fields to routes table."""
 
         values: dict[str, Any] = {
             "base_info": result.basic_info,
