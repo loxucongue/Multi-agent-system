@@ -8,16 +8,21 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, 
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.orm import selectinload
 
-from app.models.database import Route
+from app.models.database import Route, RoutePricing, RouteSchedule
 from app.models.schemas import (
     BatchCreateRequest,
     BatchCreateResponse,
     BatchUploadPreviewResponse,
+    PricingInfo,
+    PricingUpdateRequest,
     ReparseRequest,
     ReparseResponse,
+    RouteFullDetail,
     RouteCreateRequest,
     RouteCreateResponse,
     RouteDetail,
+    ScheduleInfo,
+    ScheduleUpdateRequest,
 )
 from app.services.container import services
 from app.utils.security import get_current_admin
@@ -95,6 +100,107 @@ async def list_routes(
 
     items = [RouteDetail.model_validate(r) for r in routes]
     return {"routes": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.get("/{route_id}/full", response_model=RouteFullDetail)
+async def get_route_full(route_id: int) -> RouteFullDetail:
+    """查询完整路线详情（含 pricing + schedule）。"""
+
+    rows = await services.route_service.get_routes_batch([route_id])
+    if not rows:
+        raise HTTPException(status_code=404, detail="route not found")
+
+    item = rows[0]
+    route_detail = RouteDetail.model_validate(item.model_dump(exclude={"pricing", "schedule"}))
+    return RouteFullDetail(route=route_detail, pricing=item.pricing, schedule=item.schedule)
+
+
+@router.put("/{route_id}/pricing", response_model=PricingInfo)
+async def upsert_route_pricing(route_id: int, req: PricingUpdateRequest) -> PricingInfo:
+    """创建或更新路线 pricing。"""
+
+    async with services.session_factory() as session:
+        route_exists_stmt = select(Route.id).where(Route.id == route_id)
+        route_exists = (await session.execute(route_exists_stmt)).scalar_one_or_none()
+        if route_exists is None:
+            raise HTTPException(status_code=404, detail="route not found")
+
+        pricing_stmt = select(RoutePricing).where(RoutePricing.route_id == route_id)
+        pricing_row = (await session.execute(pricing_stmt)).scalar_one_or_none()
+
+        if pricing_row is None:
+            session.add(
+                RoutePricing(
+                    route_id=route_id,
+                    price_min=req.price_min,
+                    price_max=req.price_max,
+                    currency=req.currency,
+                )
+            )
+        else:
+            await session.execute(
+                update(RoutePricing)
+                .where(RoutePricing.route_id == route_id)
+                .values(
+                    price_min=req.price_min,
+                    price_max=req.price_max,
+                    currency=req.currency,
+                    price_updated_at=func.now(),
+                )
+            )
+
+        await session.commit()
+        pricing_row = (await session.execute(pricing_stmt)).scalar_one()
+
+    if services.redis is not None:
+        try:
+            await services.redis.delete(f"route_price:{route_id}")
+        except Exception:
+            pass
+
+    return PricingInfo.model_validate(pricing_row)
+
+
+@router.put("/{route_id}/schedule", response_model=ScheduleInfo)
+async def upsert_route_schedule(route_id: int, req: ScheduleUpdateRequest) -> ScheduleInfo:
+    """创建或更新路线 schedule。"""
+
+    async with services.session_factory() as session:
+        route_exists_stmt = select(Route.id).where(Route.id == route_id)
+        route_exists = (await session.execute(route_exists_stmt)).scalar_one_or_none()
+        if route_exists is None:
+            raise HTTPException(status_code=404, detail="route not found")
+
+        schedule_stmt = select(RouteSchedule).where(RouteSchedule.route_id == route_id)
+        schedule_row = (await session.execute(schedule_stmt)).scalar_one_or_none()
+
+        if schedule_row is None:
+            session.add(
+                RouteSchedule(
+                    route_id=route_id,
+                    schedules_json=req.schedules_json,
+                )
+            )
+        else:
+            await session.execute(
+                update(RouteSchedule)
+                .where(RouteSchedule.route_id == route_id)
+                .values(
+                    schedules_json=req.schedules_json,
+                    schedule_updated_at=func.now(),
+                )
+            )
+
+        await session.commit()
+        schedule_row = (await session.execute(schedule_stmt)).scalar_one()
+
+    if services.redis is not None:
+        try:
+            await services.redis.delete(f"route_price:{route_id}")
+        except Exception:
+            pass
+
+    return ScheduleInfo.model_validate(schedule_row)
 
 
 @router.get("/{route_id}", response_model=RouteDetail)

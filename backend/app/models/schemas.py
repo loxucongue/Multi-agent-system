@@ -549,6 +549,20 @@ class BatchRoutePreviewRow(BaseModel):
     error: str | None = None
 
 
+class PricingUpdateRequest(BaseModel):
+    """更新路线价格请求。"""
+
+    price_min: Decimal
+    price_max: Decimal
+    currency: str = "CNY"
+
+
+class ScheduleUpdateRequest(BaseModel):
+    """更新路线排期请求。"""
+
+    schedules_json: Any
+
+
 class BatchUploadPreviewResponse(BaseModel):
     """批量上传预览结果。"""
 
