@@ -277,6 +277,12 @@ def _template_route_recommend(tool_results: dict[str, Any]) -> str | None:
             lines.append(f"  特色：{features[:150]}")
         if tag_str:
             lines.append(f"  标签：{tag_str}")
+        age_limit = str(detail.get("age_limit") or "")
+        certificate_limit = str(detail.get("certificate_limit") or "")
+        if age_limit:
+            lines.append(f"  年龄限制：{age_limit[:100]}")
+        if certificate_limit:
+            lines.append(f"  证件要求：{certificate_limit[:100]}")
         parts.append("\n".join(lines))
 
     if not parts:

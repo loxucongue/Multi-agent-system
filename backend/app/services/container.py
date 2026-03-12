@@ -19,6 +19,7 @@ from app.services.lead_service import LeadService
 from app.services.llm_client import LLMClient
 from app.services.prompt_service import ensure_prompt_seeds
 from app.services.rate_limiter import RateLimiter
+from app.services.route_admin_service import RouteAdminService
 from app.services.route_service import RouteService
 from app.services.session_service import SessionService
 from app.services.workflow_service import WorkflowService
@@ -59,6 +60,7 @@ class ServiceContainer:
         self._lead_service: LeadService | None = None
         self._rate_limiter: RateLimiter | None = None
         self._audit_service: AuditService | None = None
+        self._route_admin_service: RouteAdminService | None = None
 
     async def initialize(self) -> None:
         """Initialize all services and wire shared dependencies once."""
@@ -114,6 +116,12 @@ class ServiceContainer:
             )
             self._rate_limiter = RateLimiter(redis=self._redis)
             self._audit_service = AuditService(session_factory=self._session_factory)
+            self._route_admin_service = RouteAdminService(
+                session_factory=self._session_factory,
+                workflow_service=self._workflow_service,
+                redis=self._redis,
+                settings=settings,
+            )
 
             # Mark initialized before seeding prompts so service properties are accessible.
             self._initialized = True
@@ -160,6 +168,7 @@ class ServiceContainer:
         self._lead_service = None
         self._rate_limiter = None
         self._audit_service = None
+        self._route_admin_service = None
         self._session_factory = None
         self._redis = None
         self._initialized = False
@@ -217,6 +226,10 @@ class ServiceContainer:
     @property
     def audit_service(self) -> AuditService:
         return self._require_initialized("audit_service", self._audit_service)
+
+    @property
+    def route_admin_service(self) -> RouteAdminService:
+        return self._require_initialized("route_admin_service", self._route_admin_service)
 
     def _require_initialized(self, name: str, value: T | None) -> T:
         if not self._initialized or value is None:

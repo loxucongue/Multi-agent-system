@@ -32,6 +32,8 @@ class Route(Base):
     included: Mapped[str] = mapped_column(Text, nullable=False)
     features: Mapped[str | None] = mapped_column(Text, nullable=True, comment="线路特色标签文本")
     cost_excluded: Mapped[str | None] = mapped_column(Text, nullable=True, comment="费用不含说明")
+    age_limit: Mapped[str | None] = mapped_column(Text, nullable=True, comment="年龄限制说明")
+    certificate_limit: Mapped[str | None] = mapped_column(Text, nullable=True, comment="证件要求说明")
     doc_url: Mapped[str] = mapped_column(String(500), nullable=False, unique=True)
     is_hot: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     sort_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")

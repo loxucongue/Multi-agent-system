@@ -137,6 +137,8 @@ class RouteService:
                     included=route.included,
                     features=route.features,
                     cost_excluded=route.cost_excluded,
+                    age_limit=route.age_limit,
+                    certificate_limit=route.certificate_limit,
                     doc_url=route.doc_url,
                     is_hot=route.is_hot,
                     sort_weight=route.sort_weight,

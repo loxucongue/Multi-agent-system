@@ -298,6 +298,8 @@ class RouteDetail(BaseModel):
     included: str
     features: str | None = None
     cost_excluded: str | None = None
+    age_limit: str | None = None
+    certificate_limit: str | None = None
     doc_url: str
     is_hot: bool
     sort_weight: int
@@ -355,6 +357,8 @@ class RouteBatchItem(BaseModel):
     included: str
     features: str | None = None
     cost_excluded: str | None = None
+    age_limit: str | None = None
+    certificate_limit: str | None = None
     doc_url: str
     is_hot: bool
     sort_weight: int
@@ -405,6 +409,8 @@ class CompareRouteItem(BaseModel):
     itinerary_style: str
     included_summary: str
     notice_summary: str
+    age_limit: str | None = None
+    certificate_limit: str | None = None
     price_range: ComparePriceRange
     next_schedule: CompareNextSchedule
     suitable_for: list[str] = Field(default_factory=list)
@@ -480,3 +486,90 @@ class AdminLoginResponse(BaseModel):
 
     access_token: str
     token_type: str = "bearer"
+
+
+# ─────────────────────────────────────────────
+#  Route admin / parse schemas
+# ─────────────────────────────────────────────
+
+
+class RouteParseResult(BaseModel):
+    """Coze 行程解析工作流返回结构。"""
+
+    basic_info: str = ""
+    highlights: str = ""
+    index_tags: list[str] = Field(default_factory=list)
+    itinerary_days: Any = None
+    notices: str = ""
+    cost_included: str = ""
+    cost_excluded: str = ""
+    age_limit: str = ""
+    certificate_limit: str = ""
+
+
+class RouteCreateRequest(BaseModel):
+    """创建单条路线请求。"""
+
+    name: str = Field(..., min_length=1, max_length=200)
+    supplier: str = Field(..., min_length=1, max_length=100)
+    summary: str = ""
+    doc_url: str = Field(..., min_length=1, max_length=500)
+    features: str | None = None
+    is_hot: bool = False
+    sort_weight: int = 0
+
+
+class RouteCreateResponse(BaseModel):
+    """创建路线响应。"""
+
+    route_id: int
+    name: str
+    parse_status: str = "pending"
+
+
+class BatchRoutePreviewRow(BaseModel):
+    """批量导入预览单行。"""
+
+    row_num: int
+    name: str
+    supplier: str
+    summary: str = ""
+    doc_url: str
+    features: str | None = None
+    is_hot: bool = False
+    sort_weight: int = 0
+    error: str | None = None
+
+
+class BatchUploadPreviewResponse(BaseModel):
+    """批量上传预览结果。"""
+
+    rows: list[BatchRoutePreviewRow] = Field(default_factory=list)
+    valid_count: int = 0
+    error_count: int = 0
+
+
+class BatchCreateRequest(BaseModel):
+    """批量创建路线请求（前端确认后提交）。"""
+
+    rows: list[RouteCreateRequest] = Field(..., min_length=1)
+
+
+class BatchCreateResponse(BaseModel):
+    """批量创建路线响应。"""
+
+    created: list[RouteCreateResponse] = Field(default_factory=list)
+    failed: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ReparseRequest(BaseModel):
+    """重新解析请求。"""
+
+    route_ids: list[int] = Field(..., min_length=1)
+
+
+class ReparseResponse(BaseModel):
+    """重新解析响应。"""
+
+    accepted: list[int] = Field(default_factory=list)
+    skipped: list[dict[str, Any]] = Field(default_factory=list)

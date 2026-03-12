@@ -11,6 +11,7 @@ from app.config.settings import Settings
 from app.models.schemas import (
     ExternalInfoResult,
     RouteCandidate,
+    RouteParseResult,
     RouteSearchResult,
     VisaSearchResult,
 )
@@ -93,6 +94,17 @@ class WorkflowService:
         output = self._parse_external_output(payload)
 
         return ExternalInfoResult(info_type=info_type, output=output, debug_url=debug_url)
+
+    async def run_route_parse(self, doc_url: str, trace_id: str) -> RouteParseResult:
+        """调用 WF_ROUTE_PARSE 工作流，解析路线文档并返回结构化字段。"""
+
+        payload = await self._run_workflow(
+            workflow_id=self._settings.COZE_WF_ROUTE_PARSE_ID,
+            parameters={"input": doc_url},
+            trace_id=trace_id,
+        )
+
+        return self._parse_route_parse_result(payload, trace_id=trace_id)
 
     # ─────────────────────────────────────────────
     #  Internal: unified workflow execution
@@ -179,6 +191,8 @@ class WorkflowService:
             return "visa_search"
         if workflow_id == self._settings.COZE_WF_EXTERNAL_INFO_ID:
             return "external_info"
+        if workflow_id == self._settings.COZE_WF_ROUTE_PARSE_ID:
+            return "route_parse"
         return "workflow_run"
 
     # ─────────────────────────────────────────────
@@ -377,3 +391,43 @@ class WorkflowService:
         if isinstance(parsed, dict):
             return str(parsed.get("output", ""))
         return str(parsed)
+
+    def _parse_route_parse_result(self, payload: dict[str, Any], trace_id: str) -> RouteParseResult:
+        """Parse route document parsing workflow output into RouteParseResult."""
+
+        parsed = self._parse_data_field(payload)
+        if parsed is None:
+            self._logger.warning("route parse returned empty data, trace_id=%s", trace_id)
+            return RouteParseResult()
+
+        if isinstance(parsed, str):
+            try:
+                parsed = json.loads(parsed)
+            except json.JSONDecodeError:
+                self._logger.warning("route parse data is not JSON, trace_id=%s", trace_id)
+                return RouteParseResult()
+
+        if not isinstance(parsed, dict):
+            self._logger.warning("route parse data unexpected type=%s, trace_id=%s", type(parsed), trace_id)
+            return RouteParseResult()
+
+        # 优先取 output 字段（和其他工作流一致的嵌套结构）
+        inner = parsed
+        if "output" in parsed and isinstance(parsed["output"], dict):
+            inner = parsed["output"]
+
+        tags_raw = inner.get("index_tags", [])
+        if isinstance(tags_raw, str):
+            tags_raw = [t.strip() for t in tags_raw.split(",") if t.strip()]
+
+        return RouteParseResult(
+            basic_info=str(inner.get("basic_info") or ""),
+            highlights=str(inner.get("highlights") or ""),
+            index_tags=tags_raw if isinstance(tags_raw, list) else [],
+            itinerary_days=inner.get("itinerary_days"),
+            notices=str(inner.get("notices") or ""),
+            cost_included=str(inner.get("cost_included") or ""),
+            cost_excluded=str(inner.get("cost_excluded") or ""),
+            age_limit=str(inner.get("age_limit") or ""),
+            certificate_limit=str(inner.get("certificate_limit") or ""),
+        )

@@ -14,6 +14,7 @@ from app.api.admin.config import router as admin_config_router
 from app.api.admin.kb import router as admin_kb_router
 from app.api.admin.logs import router as admin_logs_router
 from app.api.admin.prompts import router as admin_prompts_router
+from app.api.admin.routes import router as admin_routes_router
 from app.api.chat import router as chat_router
 from app.api.compare import router as compare_router
 from app.api.lead import router as lead_router
@@ -52,6 +53,7 @@ app.include_router(admin_kb_router, prefix="/admin/kb", tags=["admin-kb"])
 app.include_router(admin_logs_router, prefix="/admin/logs", tags=["admin-logs"])
 app.include_router(admin_coze_logs_router, prefix="/admin/coze-logs", tags=["admin-coze-logs"])
 app.include_router(admin_config_router, prefix="/admin/config", tags=["admin-config"])
+app.include_router(admin_routes_router, prefix="/admin/routes", tags=["admin-routes"])
 
 def _normalize_origin(origin: str) -> str:
     return origin.strip().strip("\"'").rstrip("/")
