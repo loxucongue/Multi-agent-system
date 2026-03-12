@@ -204,14 +204,16 @@ async def upsert_route_schedule(route_id: int, req: ScheduleUpdateRequest) -> Sc
     return ScheduleInfo.model_validate(schedule_row)
 
 
-@router.get("/{route_id}", response_model=RouteDetail)
-async def get_route(route_id: int) -> RouteDetail:
+@router.get("/{route_id}", response_model=RouteFullDetail)
+async def get_route(route_id: int) -> RouteFullDetail:
     """查询单条路线详情。"""
 
-    detail = await services.route_service.get_route_detail(route_id)
-    if detail is None:
+    rows = await services.route_service.get_routes_batch([route_id])
+    if not rows:
         raise HTTPException(status_code=404, detail="route not found")
-    return detail
+    item = rows[0]
+    route_detail = RouteDetail.model_validate(item.model_dump(exclude={"pricing", "schedule"}))
+    return RouteFullDetail(route=route_detail, pricing=item.pricing, schedule=item.schedule)
 
 
 @router.put("/{route_id}", response_model=RouteDetail)
