@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 
-import { SendOutlined } from "@ant-design/icons";
+import { ArrowUpOutlined } from "@ant-design/icons";
 import { Button, Input, Typography } from "antd";
 import type { KeyboardEvent } from "react";
 import { useState } from "react";
@@ -24,8 +24,13 @@ export default function ChatInput({ onSend }: ChatInputProps) {
     })),
   );
 
-  const doSend = async (message: string) => {
-    const trimmed = message.trim();
+  const helperText =
+    messages.length === 0 && !isStreaming
+      ? "先输入你的第一条旅行需求。"
+      : "可以继续补充预算、天数、同行人、出发地或偏好。";
+
+  const doSend = async (value: string) => {
+    const trimmed = value.trim();
     if (!trimmed || isStreaming) {
       return;
     }
@@ -38,53 +43,94 @@ export default function ChatInput({ onSend }: ChatInputProps) {
     if (event.shiftKey) {
       return;
     }
+
     event.preventDefault();
     void doSend(text);
   };
 
-  const helperText = messages.length === 0 && !isStreaming ? "发送消息开始咨询" : "继续提问或使用快捷功能";
-
   return (
-    <div
-      style={{
-        borderTop: "1px solid #e8edf7",
-        paddingTop: 12,
-        marginTop: 10,
-        background: "#f9fbff",
-      }}
-    >
-      <div style={{ marginBottom: 8 }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          {helperText}
-        </Text>
+    <div className="input-shell">
+      <div className="input-meta">
+        <Text type="secondary">{helperText}</Text>
+        <Text type="secondary">Enter 发送，Shift + Enter 换行</Text>
       </div>
 
-      <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+      <div className="input-row">
         <Input.TextArea
           value={text}
           onChange={(event) => setText(event.target.value)}
           onPressEnter={handlePressEnter}
-          placeholder="输入您的旅游需求，例如：想去三亚5天，预算1万元"
-          autoSize={{ minRows: 2, maxRows: 6 }}
+          placeholder="例如：我想从北京出发去云南 6 天，预算 1.2 万，两位成人，节奏轻松一些"
+          autoSize={{ minRows: 1, maxRows: 4 }}
           disabled={isStreaming}
-          style={{
-            borderRadius: 16,
-            borderColor: "#dbe3f3",
-            background: "#fff",
-          }}
+          className="chat-textarea"
         />
+
         <Button
           type="primary"
           shape="circle"
-          icon={<SendOutlined />}
+          icon={<ArrowUpOutlined />}
           loading={isStreaming}
           disabled={!text.trim() || isStreaming}
           onClick={() => {
             void doSend(text);
           }}
-          style={{ width: 44, height: 44 }}
+          className="send-button"
         />
       </div>
+
+      <style jsx>{`
+        .input-shell {
+          display: grid;
+          gap: 10px;
+          padding: 14px;
+          border-radius: 20px;
+          border: 1px solid #e2e8f0;
+          background: #ffffff;
+          box-shadow: 0 12px 24px rgba(15, 23, 42, 0.06);
+        }
+
+        .input-meta {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+          font-size: 12px;
+        }
+
+        .input-row {
+          display: flex;
+          align-items: flex-end;
+          gap: 10px;
+        }
+
+        .input-row :global(.chat-textarea textarea) {
+          min-height: 56px !important;
+          padding: 16px 18px;
+          border-radius: 16px;
+          border-color: #d9e2ec;
+          background: #fbfcfd;
+          resize: none;
+          line-height: 1.7;
+        }
+
+        .send-button {
+          width: 48px;
+          min-width: 48px;
+          height: 48px;
+          box-shadow: none;
+        }
+
+        @media (max-width: 768px) {
+          .input-shell {
+            padding: 12px;
+          }
+
+          .input-meta {
+            justify-content: flex-start;
+          }
+        }
+      `}</style>
     </div>
   );
 }

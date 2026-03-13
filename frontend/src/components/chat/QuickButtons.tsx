@@ -1,15 +1,34 @@
 "use client";
 
-import { Button, Space } from "antd";
+import { CompassOutlined, ScheduleOutlined, TeamOutlined } from "@ant-design/icons";
+import { Button, Space, Typography } from "antd";
 import { useShallow } from "zustand/react/shallow";
 
 import { useChatStore } from "@/stores/sessionStore";
+
+const { Text } = Typography;
 
 interface QuickButtonsProps {
   onSend: (text: string) => Promise<void> | void;
 }
 
-const QUICK_ITEMS = ["推荐旅游线路", "签证咨询", "查看价格和团期"];
+const QUICK_ITEMS = [
+  {
+    label: "海岛度假",
+    value: "请推荐适合海岛度假的热门路线，节奏轻松一些。",
+    icon: <CompassOutlined />,
+  },
+  {
+    label: "亲子出行",
+    value: "帮我规划一条适合亲子家庭的旅行路线，优先考虑轻松和安全。",
+    icon: <TeamOutlined />,
+  },
+  {
+    label: "先看报价",
+    value: "我想先看看热门路线的大致报价和最近团期。",
+    icon: <ScheduleOutlined />,
+  },
+];
 
 export default function QuickButtons({ onSend }: QuickButtonsProps) {
   const { messages, stage, isStreaming } = useChatStore(
@@ -20,26 +39,48 @@ export default function QuickButtons({ onSend }: QuickButtonsProps) {
     })),
   );
 
-  const shouldShow = messages.length === 0 || stage === "init";
-  if (!shouldShow) {
+  if (!(messages.length === 0 || stage === "init")) {
     return null;
   }
 
   return (
-    <div style={{ marginTop: 10 }}>
-      <Space wrap size={[8, 8]}>
-        {QUICK_ITEMS.map((text) => (
+    <div className="quick-shell">
+      <Text type="secondary" style={{ fontSize: 12 }}>
+        也可以这样开始
+      </Text>
+
+      <Space wrap size={[10, 10]}>
+        {QUICK_ITEMS.map((item) => (
           <Button
-            key={text}
+            key={item.label}
+            icon={item.icon}
             disabled={isStreaming}
             onClick={() => {
-              void onSend(text);
+              void onSend(item.value);
             }}
+            className="quick-button"
           >
-            {text}
+            {item.label}
           </Button>
         ))}
       </Space>
+
+      <style jsx>{`
+        .quick-shell {
+          display: grid;
+          gap: 10px;
+        }
+
+        .quick-button {
+          height: 36px;
+          border-radius: 999px;
+          border-color: #dce4ef;
+          background: #ffffff;
+          color: #475569;
+          font-weight: 500;
+          box-shadow: none;
+        }
+      `}</style>
     </div>
   );
 }

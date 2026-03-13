@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   CalendarOutlined,
@@ -8,9 +8,11 @@ import {
   FileProtectOutlined,
   FireOutlined,
   InfoCircleOutlined,
+  LinkOutlined,
+  SafetyCertificateOutlined,
   TagOutlined,
 } from "@ant-design/icons";
-import { Button, Empty, Skeleton, Space, Tag, Typography } from "antd";
+import { Button, Empty, Skeleton, Tag, Typography } from "antd";
 
 import type { RouteFullDetail } from "@/types";
 
@@ -35,10 +37,12 @@ const splitTokens = (value: unknown, max = 10): string[] => {
   if (!text) {
     return [];
   }
+
   const tokens = text
-    .split(/[，,、；;|/\n]+/)
+    .split(/[，、；;|/\n]+/)
     .map((item) => item.trim())
     .filter(Boolean);
+
   return Array.from(new Set(tokens)).slice(0, max);
 };
 
@@ -56,7 +60,7 @@ const flattenToText = (value: unknown, depth = 0): string => {
     return value
       .map((item) => flattenToText(item, depth + 1))
       .filter(Boolean)
-      .join("；");
+      .join("，");
   }
   if (typeof value === "object") {
     const record = value as Record<string, unknown>;
@@ -64,7 +68,7 @@ const flattenToText = (value: unknown, depth = 0): string => {
       .filter(([key]) => !/(^day$|^title$|^date$|^index$)/i.test(key))
       .map(([, nested]) => flattenToText(nested, depth + 1))
       .filter(Boolean)
-      .join("；");
+      .join("，");
   }
   return "";
 };
@@ -82,8 +86,7 @@ const buildDayContent = (obj: Record<string, unknown>): string => {
     return fromList;
   }
 
-  const fallback = flattenToText(obj);
-  return fallback || "暂无行程描述";
+  return flattenToText(obj) || "暂无行程描述";
 };
 
 const toDayPlans = (itinerary: unknown): DayPlanItem[] => {
@@ -94,14 +97,13 @@ const toDayPlans = (itinerary: unknown): DayPlanItem[] => {
       return dict.days
         .map((item, index) => {
           if (typeof item === "string") {
-            return { title: `第${index + 1}天`, content: item.trim() || "暂无行程描述" };
+            return { title: `第 ${index + 1} 天`, content: item.trim() || "暂无行程描述" };
           }
           if (typeof item === "object" && item !== null) {
             const obj = item as Record<string, unknown>;
             const day = toText(obj.day) || `${index + 1}`;
-            const title = day.includes("天") ? day : `第${day}天`;
-            const content = buildDayContent(obj);
-            return { title, content };
+            const title = day.includes("天") ? day : `第 ${day} 天`;
+            return { title, content: buildDayContent(obj) };
           }
           return null;
         })
@@ -111,10 +113,9 @@ const toDayPlans = (itinerary: unknown): DayPlanItem[] => {
     const keyedDays = Object.entries(dict)
       .filter(([key]) => /(第?\d+天|day\s*\d+)/i.test(key))
       .map(([key, value]) => {
-        const normalized = key.replace(/day\s*/i, "第").replace(/(\d+)$/, "$1天");
-        const title = normalized.includes("天") ? normalized : `${normalized}天`;
-        const content = flattenToText(value) || "暂无行程描述";
-        return { title, content };
+        const dayNumber = key.match(/\d+/)?.[0] ?? "";
+        const title = dayNumber ? `第 ${dayNumber} 天` : key;
+        return { title, content: flattenToText(value) || "暂无行程描述" };
       });
 
     if (keyedDays.length > 0) {
@@ -126,14 +127,13 @@ const toDayPlans = (itinerary: unknown): DayPlanItem[] => {
     return itinerary
       .map((item, index) => {
         if (typeof item === "string") {
-          return { title: `第${index + 1}天`, content: item.trim() || "暂无行程描述" };
+          return { title: `第 ${index + 1} 天`, content: item.trim() || "暂无行程描述" };
         }
         if (typeof item === "object" && item !== null) {
           const obj = item as Record<string, unknown>;
           const titleRaw = toText(obj.day ?? obj.title ?? `${index + 1}`);
-          const title = titleRaw.includes("天") ? titleRaw : `第${titleRaw}天`;
-          const content = buildDayContent(obj);
-          return { title, content };
+          const title = titleRaw.includes("天") ? titleRaw : `第 ${titleRaw} 天`;
+          return { title, content: buildDayContent(obj) };
         }
         return null;
       })
@@ -191,8 +191,7 @@ const formatDateTime = (value: string | undefined): string => {
   if (!text) {
     return "暂无";
   }
-  const normalized = text.replace("T", " ").replace("Z", "");
-  return normalized.slice(0, 19);
+  return text.replace("T", " ").replace("Z", "").slice(0, 19);
 };
 
 const toHighlights = (value: unknown): string[] => {
@@ -217,7 +216,7 @@ const toPriceText = (data: RouteFullDetail | null): string => {
   if (!data?.pricing) {
     return "暂无价格信息";
   }
-  return `${data.pricing.price_min} - ${data.pricing.price_max} ${data.pricing.currency}`;
+  return `¥${data.pricing.price_min} - ¥${data.pricing.price_max} ${data.pricing.currency}`.trim();
 };
 
 export default function RouteDetailPanel({ open, data, loading, onClose }: RouteDetailPanelProps) {
@@ -237,7 +236,7 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
     if (!data) {
       return (
         <div className="panel-empty">
-          <Empty description="暂无线路详情" />
+          <Empty description="暂无路线详情" />
         </div>
       );
     }
@@ -250,36 +249,40 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
     const includedText = toText(route.included) || "暂无";
     const excludedText = toText(route.cost_excluded) || "暂无";
     const noticeText = toText(route.notice) || "暂无";
+    const ageLimit = toText(route.age_limit) || "未限制";
+    const certificateLimit = toText(route.certificate_limit) || "待顾问确认";
 
     return (
       <div className="panel-content">
         <section className="hero">
           <div className="hero-main">
-            <Space size={8} wrap>
-              <Tag color="blue">路线ID #{route.id}</Tag>
-              <Tag icon={<ClockCircleOutlined />} color="cyan">
-                更新 {formatDateTime(route.updated_at)}
+            <div className="hero-tags">
+              <Tag color="blue">路线 #{route.id}</Tag>
+              <Tag icon={<ClockCircleOutlined />} color="default">
+                更新于 {formatDateTime(route.updated_at)}
               </Tag>
-              {route.is_hot ? <Tag color="red">热门</Tag> : null}
-            </Space>
+              {route.is_hot ? <Tag color="red">热门路线</Tag> : null}
+            </div>
 
             <Title level={3} className="title-main">
               {route.name}
             </Title>
 
             <div className="meta-row">
-              <Text type="secondary">
-                <EnvironmentOutlined /> 供应商：{route.supplier || "暂无"}
-              </Text>
-              <Text type="secondary">
-                <InfoCircleOutlined /> 行程周期：{toText(route.base_info) || "待确认"}
-              </Text>
+              <span className="route-chip">
+                <EnvironmentOutlined />
+                供应商：{route.supplier || "暂无"}
+              </span>
+              <span className="route-chip">
+                <InfoCircleOutlined />
+                行程信息：{toText(route.base_info) || "待确认"}
+              </span>
             </div>
 
             <div className="feature-tags">
               {featureTags.length > 0 ? (
                 featureTags.map((tag) => (
-                  <Tag key={`f-${tag}`} className="glass-tag" icon={<TagOutlined />}>
+                  <Tag key={`f-${tag}`} className="detail-tag" icon={<TagOutlined />}>
                     {tag}
                   </Tag>
                 ))
@@ -287,24 +290,32 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
                 <Text type="secondary">暂无特色标签</Text>
               )}
             </div>
+
+            <div className="summary-card">
+              <Text strong style={{ color: "#111827" }}>
+                路线摘要
+              </Text>
+              <Paragraph style={{ margin: "8px 0 0", color: "#4b5563" }}>{toText(route.summary) || "暂无摘要"}</Paragraph>
+            </div>
           </div>
 
           <div className="hero-side">
-            <div className="metric">
+            <div id="route-detail-price" className="metric-card">
               <Text type="secondary">参考价格</Text>
-              <Title level={4} style={{ margin: "4px 0" }}>
+              <Title level={4} style={{ margin: "4px 0", color: "#111827" }}>
                 {toPriceText(data)}
               </Title>
-              <Text type="secondary">价格更新：{formatDateTime(pricing?.price_updated_at)}</Text>
+              <Text type="secondary">价格更新时间：{formatDateTime(pricing?.price_updated_at)}</Text>
             </div>
-            <div className="schedule-row">
+
+            <div className="metric-card">
               <Text strong>
                 <CalendarOutlined /> 最近团期
               </Text>
               <div className="schedule-tags">
                 {scheduleDates.length > 0 ? (
                   scheduleDates.map((date) => (
-                    <Tag key={date} color="geekblue">
+                    <Tag key={date} color="blue">
                       {date}
                     </Tag>
                   ))
@@ -313,61 +324,76 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
                 )}
               </div>
             </div>
+
+            <div className="metric-card">
+              <Text strong>
+                <SafetyCertificateOutlined /> 出行要求
+              </Text>
+              <div className="requirement-list">
+                <div>年龄要求：{ageLimit}</div>
+                <div>证件要求：{certificateLimit}</div>
+              </div>
+              {route.doc_url ? (
+                <a href={route.doc_url} target="_blank" rel="noreferrer" className="doc-link">
+                  <LinkOutlined />
+                  查看原始行程文档
+                </a>
+              ) : null}
+            </div>
           </div>
         </section>
 
         <section className="content-grid">
-          <div className="left-col glass-box">
+          <div className="detail-box">
             <Title level={5} style={{ marginTop: 0 }}>
-              每日行程
+              每日行程安排
             </Title>
             {dayPlans.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无行程信息" />
             ) : (
               <div className="day-grid">
-                {dayPlans.slice(0, 6).map((item) => (
-                  <article key={`${item.title}-${item.content.slice(0, 12)}`} className="day-card">
-                    <Text strong>{item.title}</Text>
-                    <Paragraph className="line-clamp-4">{item.content}</Paragraph>
+                {dayPlans.map((item, index) => (
+                  <article key={`${item.title}-${index}`} className="day-card">
+                    <div className="day-index">{index + 1}</div>
+                    <div>
+                      <Text strong>{item.title}</Text>
+                      <Paragraph style={{ margin: "8px 0 0", color: "#4b5563" }}>{item.content}</Paragraph>
+                    </div>
                   </article>
                 ))}
-                {dayPlans.length > 6 ? (
-                  <div className="more-day">另有 {dayPlans.length - 6} 天行程，已为您省略展示</div>
-                ) : null}
               </div>
             )}
           </div>
 
           <div className="right-col">
-            <section className="glass-box compact-box">
+            <section className="detail-box compact-box">
               <Title level={5} style={{ marginTop: 0 }}>
-                摘要与亮点
+                亮点速览
               </Title>
-              <Paragraph className="line-clamp-3">{toText(route.summary) || "暂无摘要"}</Paragraph>
               <ul className="highlights-list">
                 {highlights.length > 0 ? highlights.map((item) => <li key={item}>{item}</li>) : <li>暂无亮点信息</li>}
               </ul>
             </section>
 
-            <section className="glass-box compact-box">
+            <section className="detail-box compact-box">
               <Title level={5} style={{ marginTop: 0 }}>
                 <FileProtectOutlined /> 费用包含
               </Title>
-              <Paragraph className="line-clamp-4">{includedText}</Paragraph>
+              <Paragraph style={{ marginBottom: 0 }}>{includedText}</Paragraph>
             </section>
 
-            <section className="glass-box compact-box">
+            <section className="detail-box compact-box">
               <Title level={5} style={{ marginTop: 0 }}>
                 <FireOutlined /> 费用不含
               </Title>
-              <Paragraph className="line-clamp-4">{excludedText}</Paragraph>
+              <Paragraph style={{ marginBottom: 0 }}>{excludedText}</Paragraph>
             </section>
 
-            <section className="glass-box compact-box">
+            <section className="detail-box compact-box">
               <Title level={5} style={{ marginTop: 0 }}>
                 注意事项
               </Title>
-              <Paragraph className="line-clamp-4">{noticeText}</Paragraph>
+              <Paragraph style={{ marginBottom: 0 }}>{noticeText}</Paragraph>
             </section>
           </div>
         </section>
@@ -379,11 +405,15 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
     <div role="dialog" aria-modal="true" onClick={onClose} className="panel-mask">
       <div onClick={(event) => event.stopPropagation()} className="panel-shell">
         <div className="panel-header">
-          <Title level={5} style={{ margin: 0 }}>
-            路线详情
-          </Title>
+          <div>
+            <Text type="secondary">路线详情</Text>
+            <Title level={5} style={{ margin: "2px 0 0" }}>
+              深入查看每日行程、费用说明和出行要求
+            </Title>
+          </div>
           <Button type="text" icon={<CloseOutlined />} onClick={onClose} aria-label="关闭详情" />
         </div>
+
         <div className="panel-body">{body}</div>
       </div>
 
@@ -392,11 +422,8 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
           position: fixed;
           inset: 0;
           z-index: 1400;
-          background:
-            radial-gradient(circle at 20% 0%, rgba(59, 130, 246, 0.25), transparent 45%),
-            radial-gradient(circle at 80% 100%, rgba(56, 189, 248, 0.2), transparent 40%),
-            rgba(10, 18, 35, 0.56);
-          backdrop-filter: blur(10px);
+          background: rgba(15, 23, 42, 0.45);
+          backdrop-filter: blur(8px);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -404,215 +431,198 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
         }
 
         .panel-shell {
-          width: min(94vw, 1180px);
-          height: min(88vh, 780px);
+          width: min(94vw, 1240px);
+          height: min(90vh, 860px);
           border-radius: 24px;
           overflow: hidden;
-          border: 1px solid rgba(255, 255, 255, 0.3);
-          background: rgba(247, 250, 255, 0.72);
-          backdrop-filter: blur(20px);
-          box-shadow:
-            0 28px 80px rgba(8, 17, 40, 0.35),
-            inset 0 1px 0 rgba(255, 255, 255, 0.65);
-          animation: panel-pop 220ms ease-out;
+          border: 1px solid #e6ebf2;
+          background: #f8fafc;
+          box-shadow: 0 24px 80px rgba(15, 23, 42, 0.18);
           display: flex;
           flex-direction: column;
         }
 
         .panel-header {
-          height: 58px;
-          padding: 0 16px 0 20px;
-          border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+          padding: 16px 20px;
+          border-bottom: 1px solid #e6ebf2;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          background: linear-gradient(135deg, rgba(255, 255, 255, 0.84), rgba(241, 245, 255, 0.66));
+          gap: 12px;
+          background: #ffffff;
           flex-shrink: 0;
         }
 
         .panel-body {
           min-height: 0;
           flex: 1;
-          overflow: hidden;
+          overflow: auto;
         }
 
         .panel-content {
-          height: 100%;
-          padding: 14px;
+          padding: 18px;
           display: grid;
-          grid-template-rows: auto 1fr;
-          gap: 12px;
-          overflow: hidden;
+          gap: 14px;
         }
 
         .panel-loading,
         .panel-empty {
-          padding: 12px;
+          padding: 18px;
           height: 100%;
         }
 
         .hero {
-          border-radius: 18px;
-          border: 1px solid rgba(148, 163, 184, 0.28);
-          background: linear-gradient(120deg, rgba(255, 255, 255, 0.75), rgba(232, 243, 255, 0.75));
+          border-radius: 20px;
+          border: 1px solid #e6ebf2;
+          background: #ffffff;
           display: grid;
-          grid-template-columns: 1.65fr 1fr;
-          gap: 12px;
-          padding: 14px;
-          overflow: hidden;
+          grid-template-columns: 1.45fr 0.95fr;
+          gap: 14px;
+          padding: 18px;
+        }
+
+        .hero-tags,
+        .feature-tags,
+        .schedule-tags,
+        .meta-row {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
         }
 
         .title-main {
-          margin: 10px 0 8px;
-          color: #0f172a;
+          margin: 12px 0 10px;
+          color: #111827;
           line-height: 1.2;
         }
 
-        .meta-row {
-          display: flex;
-          gap: 14px;
-          flex-wrap: wrap;
+        :global(.detail-tag) {
+          margin-inline-end: 0;
+          border-radius: 999px;
+          padding-inline: 10px;
+          background: #f8fafc;
+          border-color: #dbe3ee;
+          color: #475569;
         }
 
-        .feature-tags {
-          margin-top: 10px;
-          display: flex;
-          flex-wrap: wrap;
-          gap: 6px;
-          max-height: 70px;
-          overflow: hidden;
-        }
-
-        :global(.glass-tag) {
-          background: rgba(255, 255, 255, 0.65);
-          border-color: rgba(59, 130, 246, 0.22);
+        .summary-card,
+        .metric-card,
+        .detail-box {
+          border-radius: 18px;
+          border: 1px solid #e6ebf2;
+          background: #ffffff;
+          padding: 16px;
         }
 
         .hero-side {
           display: grid;
-          grid-template-rows: 1fr auto;
-          gap: 10px;
+          gap: 12px;
         }
 
-        .metric,
-        .schedule-row {
-          border-radius: 14px;
-          border: 1px solid rgba(147, 197, 253, 0.36);
-          background: rgba(255, 255, 255, 0.78);
-          padding: 10px;
-        }
-
-        .schedule-tags {
-          margin-top: 6px;
-          display: flex;
-          flex-wrap: wrap;
+        .route-chip {
+          display: inline-flex;
+          align-items: center;
           gap: 6px;
-          max-height: 60px;
-          overflow: hidden;
+          padding: 6px 10px;
+          border-radius: 999px;
+          background: #f8fafc;
+          color: #475569;
+        }
+
+        .requirement-list {
+          margin-top: 8px;
+          display: grid;
+          gap: 6px;
+          color: #4b5563;
+        }
+
+        .doc-link {
+          margin-top: 10px;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          color: #2f80ed;
+          font-weight: 600;
         }
 
         .content-grid {
-          min-height: 0;
           display: grid;
-          grid-template-columns: 1.45fr 1fr;
-          gap: 12px;
-          overflow: hidden;
-        }
-
-        .left-col,
-        .right-col {
-          min-height: 0;
-        }
-
-        .glass-box {
-          border-radius: 14px;
-          border: 1px solid rgba(148, 163, 184, 0.22);
-          background: rgba(255, 255, 255, 0.74);
-          backdrop-filter: blur(6px);
-          padding: 12px;
-          overflow: hidden;
+          grid-template-columns: 1.35fr 0.95fr;
+          gap: 14px;
         }
 
         .day-grid {
           display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 8px;
-          max-height: 100%;
+          gap: 10px;
         }
 
         .day-card {
-          border: 1px solid rgba(203, 213, 225, 0.6);
-          background: rgba(248, 250, 255, 0.9);
-          border-radius: 10px;
-          padding: 8px;
-          min-height: 88px;
+          display: grid;
+          grid-template-columns: 42px 1fr;
+          gap: 12px;
+          padding: 14px;
+          border-radius: 16px;
+          border: 1px solid #eef2f7;
+          background: #f8fafc;
         }
 
-        .more-day {
-          grid-column: 1 / -1;
-          font-size: 12px;
-          color: #64748b;
+        .day-index {
+          width: 42px;
+          height: 42px;
+          border-radius: 14px;
+          background: #2f80ed;
+          color: #fff;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 700;
         }
 
         .right-col {
           display: grid;
-          grid-template-rows: repeat(4, minmax(0, 1fr));
-          gap: 8px;
-        }
-
-        .compact-box :global(.ant-typography) {
-          margin-bottom: 0;
-        }
-
-        .line-clamp-3,
-        .line-clamp-4 {
-          display: -webkit-box;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-        }
-
-        .line-clamp-3 {
-          -webkit-line-clamp: 3;
-        }
-
-        .line-clamp-4 {
-          -webkit-line-clamp: 4;
+          gap: 10px;
+          align-content: start;
         }
 
         .highlights-list {
-          margin: 8px 0 0 18px;
-          padding: 0;
+          margin: 0;
+          padding-left: 18px;
           display: grid;
-          gap: 4px;
-          font-size: 13px;
+          gap: 6px;
+          color: #4b5563;
         }
 
         @media (max-width: 1024px) {
           .panel-shell {
-            height: min(90vh, 840px);
+            width: 100%;
+            height: 94vh;
+            border-radius: 20px;
           }
 
-          .hero {
-            grid-template-columns: 1fr;
-          }
-
+          .hero,
           .content-grid {
             grid-template-columns: 1fr;
           }
-
-          .right-col {
-            grid-template-rows: repeat(4, minmax(88px, auto));
-          }
         }
 
-        @keyframes panel-pop {
-          from {
-            transform: translateY(8px) scale(0.985);
-            opacity: 0;
+        @media (max-width: 768px) {
+          .panel-mask {
+            padding: 10px;
           }
-          to {
-            transform: translateY(0) scale(1);
-            opacity: 1;
+
+          .panel-content {
+            padding: 12px;
+          }
+
+          .hero,
+          .summary-card,
+          .metric-card,
+          .detail-box {
+            padding: 14px;
+          }
+
+          .day-card {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>

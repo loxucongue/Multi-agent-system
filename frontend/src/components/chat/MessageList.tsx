@@ -1,140 +1,181 @@
-﻿"use client";
+"use client";
 
-import { CompassOutlined, LoadingOutlined, RobotOutlined, UserOutlined, WarningOutlined } from "@ant-design/icons";
-import { Empty, Skeleton, Space, Spin } from "antd";
+import { LoadingOutlined, RobotOutlined, UserOutlined, WarningOutlined } from "@ant-design/icons";
+import { Button, Empty, Skeleton, Spin, Typography } from "antd";
+import type { HTMLAttributes, LiHTMLAttributes } from "react";
 import { useEffect, useRef } from "react";
-import { useShallow } from "zustand/react/shallow";
 import ReactMarkdown from "react-markdown";
+import { useShallow } from "zustand/react/shallow";
 
 import { useChatStore } from "@/stores/sessionStore";
 import type { ChatMessage } from "@/types";
 
+const { Paragraph, Text, Title } = Typography;
 const STREAM_CURSOR = "▍";
 
 const markdownComponents = {
-  p: (props: React.HTMLAttributes<HTMLParagraphElement>) => <p style={{ margin: "0 0 8px 0" }} {...props} />,
-  ul: (props: React.HTMLAttributes<HTMLUListElement>) => <ul style={{ margin: "0 0 8px 18px" }} {...props} />,
-  ol: (props: React.HTMLAttributes<HTMLOListElement>) => <ol style={{ margin: "0 0 8px 18px" }} {...props} />,
-  li: (props: React.LiHTMLAttributes<HTMLLIElement>) => <li style={{ marginBottom: 4 }} {...props} />,
+  p: (props: HTMLAttributes<HTMLParagraphElement>) => <p style={{ margin: "0 0 8px 0" }} {...props} />,
+  ul: (props: HTMLAttributes<HTMLUListElement>) => <ul style={{ margin: "0 0 8px 18px" }} {...props} />,
+  ol: (props: HTMLAttributes<HTMLOListElement>) => <ol style={{ margin: "0 0 8px 18px" }} {...props} />,
+  li: (props: LiHTMLAttributes<HTMLLIElement>) => <li style={{ marginBottom: 4 }} {...props} />,
 };
 
-const isSessionExpiredMessage = (message: ChatMessage): boolean => {
+const EMPTY_SUGGESTIONS = [
+  "我想从北京出发去云南玩 6 天，预算 1.2 万，两位成人。",
+  "帮我推荐适合海岛度假的路线，想轻松一些。",
+  "我想先看看日本自由行和跟团的选择。",
+];
+
+const isSessionExpiredMessage = (message: ChatMessage) => {
   return message.role === "system" && message.content.includes("会话已过期");
 };
 
-const renderBubble = (message: ChatMessage) => {
-  if (message.role === "user") {
-    return (
-      <div key={message.id} style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
-        <div style={{ maxWidth: "78%", display: "flex", alignItems: "flex-start", gap: 8 }}>
-          <div
-            style={{
-              background: "linear-gradient(135deg, #1f5eff 0%, #2b6cff 100%)",
-              color: "#fff",
-              borderRadius: 16,
-              padding: "12px 16px",
-              lineHeight: 1.75,
-              whiteSpace: "pre-wrap",
-              boxShadow: "0 8px 20px rgba(31, 94, 255, 0.18)",
-            }}
-          >
-            {message.content}
-          </div>
-          <div
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: 15,
-              background: "#eef2fb",
-              border: "1px solid #dde5f5",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#5f7297",
-            }}
-          >
-            <UserOutlined />
-          </div>
-        </div>
-      </div>
-    );
-  }
+function BubbleAvatar({ role }: { role: "user" | "assistant" }) {
+  const isUser = role === "user";
 
-  if (message.role === "assistant") {
-    return (
-      <div key={message.id} style={{ display: "flex", justifyContent: "flex-start", marginBottom: 14 }}>
-        <div style={{ maxWidth: "82%", display: "flex", alignItems: "flex-start", gap: 8 }}>
-          <div
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: 15,
-              background: "#1f7fd6",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#fff",
-            }}
-          >
-            <RobotOutlined />
-          </div>
-          <div
-            style={{
-              background: "#ffffff",
-              border: "1px solid #e6ebf5",
-              borderRadius: 16,
-              padding: "12px 16px",
-              lineHeight: 1.75,
-              boxShadow: "0 8px 18px rgba(30, 53, 90, 0.06)",
-            }}
-          >
-            <ReactMarkdown components={markdownComponents}>{message.content}</ReactMarkdown>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  return (
+    <>
+      <span className={`avatar ${isUser ? "user" : "assistant"}`}>
+        {isUser ? <UserOutlined /> : <RobotOutlined />}
+      </span>
 
-  if (isSessionExpiredMessage(message)) {
+      <style jsx>{`
+        .avatar {
+          width: 34px;
+          height: 34px;
+          border-radius: 12px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          flex: 0 0 34px;
+          margin-top: 18px;
+        }
+
+        .avatar.user {
+          background: #eef4ff;
+          color: #2f80ed;
+          border: 1px solid #dbe7fb;
+        }
+
+        .avatar.assistant {
+          background: #eef2f7;
+          color: #4b5563;
+          border: 1px solid #e1e7ef;
+        }
+      `}</style>
+    </>
+  );
+}
+
+function MessageBubble({ message }: { message: ChatMessage }) {
+  const isUser = message.role === "user";
+
+  if (message.role === "system") {
     return (
-      <div key={message.id} style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
-        <div
-          style={{
-            display: "inline-flex",
-            gap: 6,
-            alignItems: "center",
-            color: "#cf1322",
-            background: "#fff1f0",
-            border: "1px solid #ffa39e",
-            borderRadius: 999,
-            padding: "4px 10px",
-            fontSize: 12,
-          }}
-        >
-          <WarningOutlined />
-          <span>{message.content}</span>
+      <div className="system-row">
+        <div className={`system-pill ${isSessionExpiredMessage(message) ? "warning" : ""}`}>
+          {isSessionExpiredMessage(message) ? <WarningOutlined /> : null}
+          {message.content}
         </div>
+
+        <style jsx>{`
+          .system-row {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 16px;
+          }
+
+          .system-pill {
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: #ffffff;
+            border: 1px solid #dce4ef;
+            color: #6b7280;
+            font-size: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+          }
+
+          .system-pill.warning {
+            background: #fff4eb;
+            border-color: #ffd3ad;
+            color: #c2410c;
+          }
+        `}</style>
       </div>
     );
   }
 
   return (
-    <div key={message.id} style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
-      <div
-        style={{
-          color: "#6c7894",
-          background: "#f6f8fc",
-          border: "1px solid #e8edf7",
-          borderRadius: 999,
-          padding: "5px 12px",
-          fontSize: 12,
-        }}
-      >
-        {message.content}
+    <div className={`bubble-row ${isUser ? "user" : "assistant"}`}>
+      {!isUser ? <BubbleAvatar role="assistant" /> : null}
+
+      <div className="bubble-stack">
+        <span className="bubble-name">{isUser ? "你" : "旅行顾问"}</span>
+        <div className={`bubble ${isUser ? "user" : "assistant"}`}>
+          {isUser ? message.content : <ReactMarkdown components={markdownComponents}>{message.content}</ReactMarkdown>}
+        </div>
       </div>
+
+      {isUser ? <BubbleAvatar role="user" /> : null}
+
+      <style jsx>{`
+        .bubble-row {
+          display: flex;
+          gap: 12px;
+          margin-bottom: 22px;
+          align-items: flex-start;
+        }
+
+        .bubble-row.user {
+          justify-content: flex-end;
+        }
+
+        .bubble-row.assistant {
+          justify-content: flex-start;
+        }
+
+        .bubble-stack {
+          display: grid;
+          gap: 6px;
+          max-width: min(600px, 100%);
+        }
+
+        .bubble-row.user .bubble-stack {
+          justify-items: end;
+        }
+
+        .bubble-name {
+          font-size: 12px;
+          color: #8a94a6;
+        }
+
+        .bubble {
+          padding: 14px 16px;
+          border-radius: 18px;
+          line-height: 1.8;
+          white-space: pre-wrap;
+          word-break: break-word;
+          box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+        }
+
+        .bubble.user {
+          color: #ffffff;
+          background: #2f80ed;
+          border-top-right-radius: 8px;
+        }
+
+        .bubble.assistant {
+          color: #1f2937;
+          background: #f4f6f8;
+          border: 1px solid #e6ebf2;
+          border-top-left-radius: 8px;
+        }
+      `}</style>
     </div>
   );
-};
+}
 
 export default function MessageList() {
   const { messages, isStreaming, currentStreamText } = useChatStore(
@@ -158,60 +199,125 @@ export default function MessageList() {
 
   if (isLoading) {
     return (
-      <div ref={scrollRef} style={{ overflowY: "auto", flex: 1, padding: "8px 4px" }}>
-        <Skeleton active paragraph={{ rows: 4 }} title={{ width: "35%" }} style={{ background: "#fff", borderRadius: 14, padding: 16 }} />
+      <div ref={scrollRef} className="message-scroll loading-state">
+        <Skeleton active paragraph={{ rows: 5 }} title={{ width: "30%" }} />
+
+        <style jsx>{`
+          .message-scroll {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+          }
+
+          .loading-state {
+            padding: 12px;
+          }
+
+          .loading-state :global(.ant-skeleton) {
+            padding: 18px;
+            border-radius: 18px;
+            background: #ffffff;
+            border: 1px solid #e8edf4;
+          }
+        `}</style>
       </div>
     );
   }
 
   if (isEmpty) {
     return (
-      <div
-        ref={scrollRef}
-        style={{
-          overflowY: "auto",
-          flex: 1,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 24,
-        }}
-      >
-        <Empty image={<CompassOutlined style={{ fontSize: 48, color: "#1f5eff" }} />} description="您好！我是您的专属旅游顾问，请告诉我您想去哪里。" />
+      <div ref={scrollRef} className="message-scroll empty-state">
+        <div className="empty-inner">
+          <div className="empty-copy">
+            <Text className="eyebrow">AI Travel Assistant</Text>
+            <Title level={3} style={{ margin: "8px 0 10px", color: "#111827" }}>
+              先告诉我你的旅行需求，我会开始推荐路线。
+            </Title>
+            <Paragraph style={{ marginBottom: 0, color: "#6b7280" }}>
+              可以从目的地、天数、预算、同行人或旅行偏好中的任意一项开始。
+            </Paragraph>
+          </div>
+
+          <div className="suggestion-list">
+            {EMPTY_SUGGESTIONS.map((item) => (
+              <Button key={item} className="suggestion-chip">
+                {item}
+              </Button>
+            ))}
+          </div>
+
+          <div className="empty-illustration">
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="开始对话后，右侧会同步显示推荐路线与候选方案。" />
+          </div>
+        </div>
+
+        <style jsx>{`
+          .message-scroll {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+          }
+
+          .empty-state {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 16px;
+          }
+
+          .empty-inner {
+            width: min(760px, 100%);
+            display: grid;
+            gap: 20px;
+          }
+
+          .eyebrow {
+            color: #2f80ed;
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+          }
+
+          .suggestion-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+          }
+
+          .suggestion-chip {
+            height: auto;
+            padding: 10px 14px;
+            border-radius: 999px;
+            border-color: #dbe3ee;
+            background: #ffffff;
+            color: #4b5563;
+            text-align: left;
+            white-space: normal;
+          }
+
+          .empty-illustration {
+            padding: 20px;
+            border-radius: 18px;
+            border: 1px dashed #d6dee9;
+            background: #ffffff;
+          }
+        `}</style>
       </div>
     );
   }
 
   return (
-    <div ref={scrollRef} style={{ overflowY: "auto", flex: 1, padding: "8px 4px" }}>
-      {messages.map(renderBubble)}
+    <div ref={scrollRef} className="message-scroll active-state">
+      {messages.map((message) => (
+        <MessageBubble key={message.id} message={message} />
+      ))}
 
       {isStreaming && currentStreamText ? (
-        <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 12 }}>
-          <div style={{ maxWidth: "82%", display: "flex", alignItems: "flex-start", gap: 8 }}>
-            <div
-              style={{
-                width: 30,
-                height: 30,
-                borderRadius: 15,
-                background: "#1f7fd6",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#fff",
-              }}
-            >
-              <RobotOutlined />
-            </div>
-            <div
-              style={{
-                background: "#ffffff",
-                border: "1px solid #e6ebf5",
-                borderRadius: 16,
-                padding: "12px 16px",
-                lineHeight: 1.75,
-              }}
-            >
+        <div className="bubble-row assistant">
+          <BubbleAvatar role="assistant" />
+          <div className="bubble-stack">
+            <span className="bubble-name">旅行顾问</span>
+            <div className="bubble assistant">
               <ReactMarkdown components={markdownComponents}>{currentStreamText}</ReactMarkdown>
               <span className="stream-cursor">{STREAM_CURSOR}</span>
             </div>
@@ -220,26 +326,74 @@ export default function MessageList() {
       ) : null}
 
       {isStreaming && !currentStreamText ? (
-        <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 12 }}>
-          <div
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              background: "#fff",
-              border: "1px solid #e6ebf5",
-              borderRadius: 14,
-              padding: "10px 14px",
-              color: "#4d5d79",
-            }}
-          >
+        <div className="typing-row">
+          <div className="typing-pill">
             <Spin indicator={<LoadingOutlined spin />} size="small" />
-            <span>正在思考...</span>
+            正在生成路线建议...
           </div>
         </div>
       ) : null}
 
       <style jsx>{`
+        .message-scroll {
+          flex: 1;
+          min-height: 0;
+          overflow-y: auto;
+        }
+
+        .active-state {
+          padding: 10px 6px 8px;
+        }
+
+        .bubble-row {
+          display: flex;
+          gap: 12px;
+          margin-bottom: 22px;
+          align-items: flex-start;
+        }
+
+        .bubble-stack {
+          display: grid;
+          gap: 6px;
+          max-width: min(600px, 100%);
+        }
+
+        .bubble-name {
+          font-size: 12px;
+          color: #8a94a6;
+        }
+
+        .bubble {
+          padding: 14px 16px;
+          border-radius: 18px;
+          line-height: 1.8;
+          box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+        }
+
+        .bubble.assistant {
+          color: #1f2937;
+          background: #f4f6f8;
+          border: 1px solid #e6ebf2;
+          border-top-left-radius: 8px;
+        }
+
+        .typing-row {
+          display: flex;
+          justify-content: flex-start;
+          padding-left: 46px;
+        }
+
+        .typing-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 14px;
+          border-radius: 999px;
+          background: #ffffff;
+          border: 1px solid #dce4ef;
+          color: #6b7280;
+        }
+
         .stream-cursor {
           display: inline-block;
           margin-left: 2px;

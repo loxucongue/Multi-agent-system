@@ -11,19 +11,28 @@ import {
   Modal,
   Popconfirm,
   Space,
+  Statistic,
   Switch,
   Table,
   Tag,
   Typography,
   Upload,
 } from "antd";
-import type { ColumnsType } from "antd/es/table";
 import type { UploadProps } from "antd";
-import { UploadOutlined } from "@ant-design/icons";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ColumnsType } from "antd/es/table";
+import {
+  EditOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SyncOutlined,
+  UploadOutlined,
+  DeleteOutlined,
+} from "@ant-design/icons";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useShallow } from "zustand/react/shallow";
 
+import { API_BASE_URL } from "@/services/api";
 import { useAdminStore } from "@/stores/adminStore";
 import type {
   ParseStatusResponse,
@@ -36,10 +45,8 @@ import type {
   RouteUpdateRequest,
 } from "@/types";
 
-const { Text } = Typography;
+const { Text, Title } = Typography;
 const { TextArea } = Input;
-
-/* ---------- batch preview types ---------- */
 
 interface PreviewRow {
   row_num: number;
@@ -67,9 +74,12 @@ interface BatchCreateResponse {
   failed: { name: string; doc_url: string; error: string }[];
 }
 
-/* ------------------------------------------------------------------ */
-/*  主页面                                                             */
-/* ------------------------------------------------------------------ */
+const formatPrice = (route: RouteListItem) => {
+  if (!route.pricing) {
+    return "待补充";
+  }
+  return `¥${route.pricing.price_min} - ¥${route.pricing.price_max}`;
+};
 
 export default function AdminRoutesPage() {
   const router = useRouter();
@@ -78,7 +88,6 @@ export default function AdminRoutesPage() {
     useShallow((s) => ({ authedFetch: s.authedFetch, logout: s.logout })),
   );
 
-  /* ---------- 列表状态 ---------- */
   const [routes, setRoutes] = useState<RouteListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -86,26 +95,22 @@ export default function AdminRoutesPage() {
   const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  /* ---------- 编辑弹窗状态 ---------- */
   const [editOpen, setEditOpen] = useState(false);
   const [editingRoute, setEditingRoute] = useState<RouteListItem | null>(null);
   const [editForm] = Form.useForm<RouteUpdateRequest>();
   const [editSubmitting, setEditSubmitting] = useState(false);
 
-  /* ---------- 创建弹窗状态 ---------- */
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm] = Form.useForm<RouteCreateRequest>();
   const [createSubmitting, setCreateSubmitting] = useState(false);
 
-  /* ---------- 批量导入预览状态 ---------- */
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewRows, setPreviewRows] = useState<PreviewRow[]>([]);
   const [previewValidCount, setPreviewValidCount] = useState(0);
+  const [previewErrorCount, setPreviewErrorCount] = useState(0);
   const [batchLoading, setBatchLoading] = useState(false);
 
-  /* ---------- 解析状态轮询 ---------- */
   const [parsingIds, setParsingIds] = useState<Set<number>>(new Set());
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const handleAuthError = useCallback(
     (error: unknown) => {
@@ -120,10 +125,6 @@ export default function AdminRoutesPage() {
     [logout, message, router],
   );
 
-  /* ================================================================ */
-  /*  数据加载                                                         */
-  /* ================================================================ */
-
   const loadRoutes = useCallback(async () => {
     setLoading(true);
     try {
@@ -131,11 +132,11 @@ export default function AdminRoutesPage() {
         page: String(page),
         page_size: String(pageSize),
       });
-      if (keyword.trim()) params.set("keyword", keyword.trim());
+      if (keyword.trim()) {
+        params.set("keyword", keyword.trim());
+      }
 
-      const data = await authedFetch<RouteListResponse>(
-        `/admin/routes/?${params.toString()}`,
-      );
+      const data = await authedFetch<RouteListResponse>(`/admin/routes/?${params.toString()}`);
       setRoutes(data.routes);
       setTotal(data.total);
     } catch (error) {
@@ -149,31 +150,28 @@ export default function AdminRoutesPage() {
     void loadRoutes();
   }, [loadRoutes]);
 
-  /* ================================================================ */
-  /*  解析状态轮询                                                     */
-  /* ================================================================ */
-
   useEffect(() => {
-    if (parsingIds.size === 0) return;
+    if (parsingIds.size === 0) {
+      return;
+    }
 
     const interval = setInterval(async () => {
       const stillParsing = new Set<number>();
-      for (const rid of parsingIds) {
+      for (const routeId of parsingIds) {
         try {
-          const st = await authedFetch<ParseStatusResponse>(
-            `/admin/routes/${rid}/parse-status`,
-          );
-          if (st.status === "parsing") {
-            stillParsing.add(rid);
-          } else if (st.status === "done") {
-            message.success(`线路 ${rid} 解析完成`);
-          } else if (st.status === "failed") {
-            message.error(`线路 ${rid} 解析失败: ${st.message ?? ""}`);
+          const status = await authedFetch<ParseStatusResponse>(`/admin/routes/${routeId}/parse-status`);
+          if (status.status === "parsing") {
+            stillParsing.add(routeId);
+          } else if (status.status === "done") {
+            message.success(`线路 ${routeId} 解析完成`);
+          } else if (status.status === "failed") {
+            message.error(`线路 ${routeId} 解析失败：${status.message ?? "请稍后重试"}`);
           }
         } catch {
-          /* 忽略轮询错误 */
+          // Ignore transient polling errors.
         }
       }
+
       setParsingIds(stillParsing);
       if (stillParsing.size === 0) {
         void loadRoutes();
@@ -181,44 +179,27 @@ export default function AdminRoutesPage() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [parsingIds, authedFetch, message, loadRoutes]);
+  }, [authedFetch, loadRoutes, message, parsingIds]);
 
-  /* cleanup polling on unmount */
-  useEffect(() => {
-    return () => {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-      }
-    };
-  }, []);
-
-  /* ================================================================ */
-  /*  操作 - 重新解析                                                  */
-  /* ================================================================ */
-
-  const handleReparse = async (routeId: number) => {
+  const handleReparse = useCallback(async (routeId: number) => {
     try {
       const resp = await authedFetch<ReparseResponse>("/admin/routes/reparse", {
         method: "POST",
         body: JSON.stringify({ route_ids: [routeId] }),
       });
       if (resp.accepted.includes(routeId)) {
-        message.success("已提交重新解析");
+        message.success("已提交重新解析任务");
         setParsingIds((prev) => new Set(prev).add(routeId));
       } else {
-        const skip = resp.skipped.find((s) => s.route_id === routeId);
-        message.warning(`跳过: ${skip?.reason ?? "未知原因"}`);
+        const skipped = resp.skipped.find((item) => item.route_id === routeId);
+        message.warning(`已跳过：${skipped?.reason ?? "未知原因"}`);
       }
     } catch (error) {
       handleAuthError(error);
     }
-  };
+  }, [authedFetch, handleAuthError, message]);
 
-  /* ================================================================ */
-  /*  操作 - 编辑                                                      */
-  /* ================================================================ */
-
-  const openEdit = (route: RouteListItem) => {
+  const openEdit = useCallback((route: RouteListItem) => {
     setEditingRoute(route);
     editForm.setFieldsValue({
       name: route.name,
@@ -233,23 +214,25 @@ export default function AdminRoutesPage() {
       notice: route.notice,
       included: route.included,
       cost_excluded: route.cost_excluded ?? undefined,
-      age_limit: (route as RouteListItem & { age_limit?: string }).age_limit ?? undefined,
-      certificate_limit:
-        (route as RouteListItem & { certificate_limit?: string }).certificate_limit ?? undefined,
+      age_limit: route.age_limit ?? undefined,
+      certificate_limit: route.certificate_limit ?? undefined,
     });
     setEditOpen(true);
-  };
+  }, [editForm]);
 
   const handleEditSubmit = async () => {
-    if (!editingRoute) return;
+    if (!editingRoute) {
+      return;
+    }
+
     try {
       const values = await editForm.validateFields();
       setEditSubmitting(true);
 
       const body: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(values)) {
-        if (v !== undefined && v !== null && v !== "") {
-          body[k] = v;
+      for (const [key, value] of Object.entries(values)) {
+        if (value !== undefined) {
+          body[key] = value;
         }
       }
 
@@ -257,7 +240,7 @@ export default function AdminRoutesPage() {
         method: "PUT",
         body: JSON.stringify(body),
       });
-      message.success("更新成功");
+      message.success("线路已更新");
       setEditOpen(false);
       setEditingRoute(null);
       void loadRoutes();
@@ -268,23 +251,15 @@ export default function AdminRoutesPage() {
     }
   };
 
-  /* ================================================================ */
-  /*  操作 - 删除                                                      */
-  /* ================================================================ */
-
-  const handleDelete = async (routeId: number) => {
+  const handleDelete = useCallback(async (routeId: number) => {
     try {
       await authedFetch(`/admin/routes/${routeId}`, { method: "DELETE" });
-      message.success("删除成功");
+      message.success("线路已删除");
       void loadRoutes();
     } catch (error) {
       handleAuthError(error);
     }
-  };
-
-  /* ================================================================ */
-  /*  操作 - 创建                                                      */
-  /* ================================================================ */
+  }, [authedFetch, handleAuthError, loadRoutes, message]);
 
   const handleCreate = async () => {
     try {
@@ -308,10 +283,6 @@ export default function AdminRoutesPage() {
     }
   };
 
-  /* ================================================================ */
-  /*  操作 - 批量导入                                                  */
-  /* ================================================================ */
-
   const uploadProps: UploadProps = {
     accept: ".xlsx,.xls",
     showUploadList: false,
@@ -321,21 +292,27 @@ export default function AdminRoutesPage() {
         const formData = new FormData();
         formData.append("file", file);
         const token = useAdminStore.getState().token;
-        const resp = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/admin/routes/batch/preview`,
-          {
-            method: "POST",
-            headers: { Authorization: `Bearer ${token}` },
-            body: formData,
-          },
-        );
+        const resp = await fetch(`${API_BASE_URL}/admin/routes/batch/preview`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        });
+
+        if (resp.status === 401) {
+          logout();
+          router.replace("/admin/login");
+          return false;
+        }
+
         if (!resp.ok) {
           const errData = (await resp.json().catch(() => ({}))) as { detail?: string };
-          throw new Error(errData.detail ?? `上传失败: ${resp.status}`);
+          throw new Error(errData.detail ?? `上传失败：${resp.status}`);
         }
+
         const data = (await resp.json()) as PreviewResponse;
         setPreviewRows(data.rows);
         setPreviewValidCount(data.valid_count);
+        setPreviewErrorCount(data.error_count);
         setPreviewOpen(true);
       } catch (error) {
         handleAuthError(error);
@@ -347,11 +324,12 @@ export default function AdminRoutesPage() {
   };
 
   const handleBatchCreate = async () => {
-    const validRows = previewRows.filter((r) => r.error === null);
+    const validRows = previewRows.filter((row) => row.error === null);
     if (validRows.length === 0) {
-      message.warning("没有可导入的有效行");
+      message.warning("没有可导入的有效数据");
       return;
     }
+
     setBatchLoading(true);
     try {
       const resp = await authedFetch<BatchCreateResponse>("/admin/routes/batch", {
@@ -361,9 +339,7 @@ export default function AdminRoutesPage() {
       message.success(`批量导入完成：成功 ${resp.created.length} 条，失败 ${resp.failed.length} 条`);
       setPreviewOpen(false);
       setPreviewRows([]);
-      const pendingIds = resp.created
-        .filter((c) => c.parse_status === "pending")
-        .map((c) => c.route_id);
+      const pendingIds = resp.created.filter((item) => item.parse_status === "pending").map((item) => item.route_id);
       if (pendingIds.length > 0) {
         setParsingIds((prev) => {
           const next = new Set(prev);
@@ -379,9 +355,8 @@ export default function AdminRoutesPage() {
     }
   };
 
-  /* ================================================================ */
-  /*  表格列定义                                                       */
-  /* ================================================================ */
+  const hotRoutesCount = useMemo(() => routes.filter((route) => route.is_hot).length, [routes]);
+  const parsingCount = parsingIds.size;
 
   const columns: ColumnsType<RouteListItem> = useMemo(
     () => [
@@ -397,65 +372,72 @@ export default function AdminRoutesPage() {
         dataIndex: "name",
         key: "name",
         ellipsis: true,
-        width: 240,
+        width: 280,
+        render: (_, row) => (
+          <Space direction="vertical" size={2}>
+            <Text strong>{row.name}</Text>
+            <Text type="secondary">{row.summary || "暂无摘要"}</Text>
+          </Space>
+        ),
       },
       {
         title: "供应商",
         dataIndex: "supplier",
         key: "supplier",
-        width: 120,
+        width: 140,
         ellipsis: true,
       },
       {
         title: "价格区间",
         key: "price",
-        width: 160,
-        render: (_, row) =>
-          row.pricing
-            ? `¥${row.pricing.price_min} - ¥${row.pricing.price_max}`
-            : <Text type="secondary">未设置</Text>,
+        width: 180,
+        render: (_, row) => <Text className="metric-value">{formatPrice(row)}</Text>,
       },
       {
-        title: "热门",
-        dataIndex: "is_hot",
-        key: "is_hot",
-        width: 70,
-        render: (v: boolean) => (v ? <Tag color="red">热门</Tag> : <Tag>普通</Tag>),
+        title: "状态",
+        key: "status",
+        width: 180,
+        render: (_, row) => (
+          <Space wrap size={[8, 8]}>
+            {row.is_hot ? <Tag color="volcano">热门</Tag> : <Tag>常规</Tag>}
+            {parsingIds.has(row.id) ? <Tag color="processing">解析中</Tag> : <Tag color="success">已完成</Tag>}
+          </Space>
+        ),
       },
       {
-        title: "上次修改时间",
+        title: "最近更新",
         dataIndex: "updated_at",
         key: "updated_at",
         width: 180,
-        sorter: (a, b) =>
-          new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime(),
-        render: (v: string) => (v ? new Date(v).toLocaleString("zh-CN") : "-"),
+        sorter: (a, b) => new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime(),
+        render: (value: string) => (value ? new Date(value).toLocaleString("zh-CN") : "-"),
       },
       {
         title: "操作",
         key: "actions",
-        width: 240,
+        width: 280,
         render: (_, row) => (
-          <Space>
+          <Space wrap>
             <Button
               size="small"
-              onClick={() => void handleReparse(row.id)}
+              icon={<SyncOutlined />}
               loading={parsingIds.has(row.id)}
+              onClick={() => void handleReparse(row.id)}
             >
               {parsingIds.has(row.id) ? "解析中" : "重新解析"}
             </Button>
-            <Button size="small" type="primary" ghost onClick={() => openEdit(row)}>
+            <Button size="small" type="primary" ghost icon={<EditOutlined />} onClick={() => openEdit(row)}>
               编辑
             </Button>
             <Popconfirm
-              title="确定删除该线路？"
-              description="删除后不可恢复"
+              title="确定删除这条线路？"
+              description="删除后不可恢复，请确认。"
               onConfirm={() => void handleDelete(row.id)}
               okText="删除"
               cancelText="取消"
               okButtonProps={{ danger: true }}
             >
-              <Button size="small" danger>
+              <Button size="small" danger icon={<DeleteOutlined />}>
                 删除
               </Button>
             </Popconfirm>
@@ -463,38 +445,47 @@ export default function AdminRoutesPage() {
         ),
       },
     ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [parsingIds],
+    [handleDelete, handleReparse, openEdit, parsingIds],
   );
 
   const previewColumns: ColumnsType<PreviewRow> = [
-    { title: "行号", dataIndex: "row_num", width: 60 },
+    { title: "行号", dataIndex: "row_num", width: 72 },
     { title: "名称", dataIndex: "name", ellipsis: true },
-    { title: "供应商", dataIndex: "supplier", width: 100 },
-    { title: "文档链接", dataIndex: "doc_url", ellipsis: true, width: 200 },
+    { title: "供应商", dataIndex: "supplier", width: 120, ellipsis: true },
+    { title: "文档链接", dataIndex: "doc_url", ellipsis: true, width: 220 },
     {
-      title: "状态",
-      width: 120,
-      render: (_, row) =>
-        row.error ? <Tag color="error">{row.error}</Tag> : <Tag color="success">有效</Tag>,
+      title: "校验结果",
+      width: 160,
+      render: (_, row) => (row.error ? <Tag color="error">{row.error}</Tag> : <Tag color="success">有效</Tag>),
     },
   ];
 
-  /* ================================================================ */
-  /*  渲染                                                             */
-  /* ================================================================ */
-
   return (
-    <>
+    <div style={{ display: "grid", gap: 16 }}>
       <Card
-        title="线路管理"
-        extra={
-          <Space>
+        style={{
+          borderRadius: 28,
+          borderColor: "rgba(125, 181, 211, 0.24)",
+          background:
+            "radial-gradient(circle at top right, rgba(249, 115, 22, 0.12), transparent 24%), linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(240,249,255,0.9) 100%)",
+        }}
+        styles={{ body: { padding: 20 } }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 18 }}>
+          <div>
+            <Text type="secondary">线路展示管理</Text>
+            <Title level={3} style={{ margin: "4px 0 8px" }}>
+              路线内容、解析状态与展示优先级
+            </Title>
+            <Text type="secondary">集中管理用户侧会展示的所有线路信息，包括文档解析、价格、摘要与标签。</Text>
+          </div>
+
+          <Space wrap>
             <Input.Search
-              placeholder="搜索线路名称/供应商"
+              placeholder="搜索线路名称或供应商"
               allowClear
-              onSearch={(v) => {
-                setKeyword(v);
+              onSearch={(value) => {
+                setKeyword(value);
                 setPage(1);
               }}
               style={{ width: 260 }}
@@ -504,12 +495,35 @@ export default function AdminRoutesPage() {
                 批量导入
               </Button>
             </Upload>
-            <Button onClick={() => void loadRoutes()}>刷新</Button>
-            <Button type="primary" onClick={() => setCreateOpen(true)}>
+            <Button icon={<ReloadOutlined />} onClick={() => void loadRoutes()}>
+              刷新
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
               新建线路
             </Button>
           </Space>
-        }
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+          <Card bordered={false} style={{ borderRadius: 22, background: "rgba(255,255,255,0.74)" }}>
+            <Statistic title="当前页线路数" value={routes.length} />
+          </Card>
+          <Card bordered={false} style={{ borderRadius: 22, background: "rgba(255,255,255,0.74)" }}>
+            <Statistic title="热门线路数" value={hotRoutesCount} />
+          </Card>
+          <Card bordered={false} style={{ borderRadius: 22, background: "rgba(255,255,255,0.74)" }}>
+            <Statistic title="解析中的线路" value={parsingCount} />
+          </Card>
+          <Card bordered={false} style={{ borderRadius: 22, background: "rgba(255,255,255,0.74)" }}>
+            <Statistic title="总线路数" value={total} />
+          </Card>
+        </div>
+      </Card>
+
+      <Card
+        title="线路列表"
+        styles={{ body: { paddingTop: 8 } }}
+        style={{ borderRadius: 28, borderColor: "rgba(125, 181, 211, 0.24)" }}
       >
         <Table
           rowKey="id"
@@ -521,21 +535,20 @@ export default function AdminRoutesPage() {
             pageSize,
             total,
             showSizeChanger: true,
-            showTotal: (t) => `共 ${t} 条`,
-            onChange: (p, ps) => {
-              setPage(p);
-              setPageSize(ps);
+            showTotal: (value) => `共 ${value} 条`,
+            onChange: (nextPage, nextPageSize) => {
+              setPage(nextPage);
+              setPageSize(nextPageSize);
             },
           }}
-          scroll={{ x: 1100 }}
+          scroll={{ x: 1280 }}
         />
       </Card>
 
-      {/* ==================== 编辑弹窗 ==================== */}
       <Modal
-        title={editingRoute ? `编辑线路 · ${editingRoute.name}` : "编辑线路"}
+        title={editingRoute ? `编辑线路：${editingRoute.name}` : "编辑线路"}
         open={editOpen}
-        width={720}
+        width={760}
         onCancel={() => {
           if (!editSubmitting) {
             setEditOpen(false);
@@ -546,25 +559,25 @@ export default function AdminRoutesPage() {
         confirmLoading={editSubmitting}
         destroyOnClose
       >
-        <Form form={editForm} layout="vertical" style={{ maxHeight: 520, overflowY: "auto" }}>
+        <Form form={editForm} layout="vertical" style={{ maxHeight: 560, overflowY: "auto", paddingRight: 8 }}>
           <Form.Item label="线路名称" name="name" rules={[{ required: true, message: "请输入线路名称" }]}>
             <Input maxLength={200} />
           </Form.Item>
           <Form.Item label="供应商" name="supplier" rules={[{ required: true, message: "请输入供应商" }]}>
             <Input maxLength={100} />
           </Form.Item>
-          <Form.Item label="简介" name="summary">
+          <Form.Item label="摘要" name="summary">
             <TextArea rows={2} />
           </Form.Item>
           <Form.Item label="文档链接" name="doc_url" rules={[{ required: true, message: "请输入文档链接" }]}>
             <Input maxLength={500} />
           </Form.Item>
-          <Form.Item label="线路特色" name="features">
+          <Form.Item label="路线特色" name="features">
             <Input maxLength={500} />
           </Form.Item>
 
-          <Space style={{ width: "100%" }}>
-            <Form.Item label="热门" name="is_hot" valuePropName="checked">
+          <Space style={{ width: "100%" }} wrap>
+            <Form.Item label="热门线路" name="is_hot" valuePropName="checked">
               <Switch />
             </Form.Item>
             <Form.Item label="排序权重" name="sort_weight">
@@ -572,12 +585,7 @@ export default function AdminRoutesPage() {
             </Form.Item>
           </Space>
 
-          <Descriptions
-            title="Coze 解析字段（可手动修正）"
-            column={1}
-            size="small"
-            style={{ marginBottom: 16 }}
-          />
+          <Descriptions title="解析字段修正" column={1} size="small" style={{ marginBottom: 16 }} />
 
           <Form.Item label="亮点" name="highlights">
             <TextArea rows={3} />
@@ -603,11 +611,10 @@ export default function AdminRoutesPage() {
         </Form>
       </Modal>
 
-      {/* ==================== 创建弹窗 ==================== */}
       <Modal
         title="新建线路"
         open={createOpen}
-        width={600}
+        width={640}
         onCancel={() => {
           if (!createSubmitting) {
             setCreateOpen(false);
@@ -619,22 +626,22 @@ export default function AdminRoutesPage() {
         destroyOnClose
       >
         <Form form={createForm} layout="vertical">
-          <Form.Item label="线路名称" name="name" rules={[{ required: true }]}>
+          <Form.Item label="线路名称" name="name" rules={[{ required: true, message: "请输入线路名称" }]}>
             <Input maxLength={200} />
           </Form.Item>
-          <Form.Item label="供应商" name="supplier" rules={[{ required: true }]}>
+          <Form.Item label="供应商" name="supplier" rules={[{ required: true, message: "请输入供应商" }]}>
             <Input maxLength={100} />
           </Form.Item>
-          <Form.Item label="简介" name="summary">
+          <Form.Item label="摘要" name="summary">
             <TextArea rows={2} />
           </Form.Item>
-          <Form.Item label="文档链接 (PDF)" name="doc_url" rules={[{ required: true }]}>
-            <Input maxLength={500} placeholder="https://oss.example.com/xxx.pdf" />
+          <Form.Item label="文档链接（PDF）" name="doc_url" rules={[{ required: true, message: "请输入文档链接" }]}>
+            <Input maxLength={500} placeholder="https://oss.example.com/route.pdf" />
           </Form.Item>
-          <Form.Item label="线路特色" name="features">
+          <Form.Item label="路线特色" name="features">
             <Input />
           </Form.Item>
-          <Space>
+          <Space wrap>
             <Form.Item label="最低价" name="price_min">
               <InputNumber min={0} precision={2} />
             </Form.Item>
@@ -642,8 +649,8 @@ export default function AdminRoutesPage() {
               <InputNumber min={0} precision={2} />
             </Form.Item>
           </Space>
-          <Space>
-            <Form.Item label="热门" name="is_hot" valuePropName="checked" initialValue={false}>
+          <Space wrap>
+            <Form.Item label="热门线路" name="is_hot" valuePropName="checked" initialValue={false}>
               <Switch />
             </Form.Item>
             <Form.Item label="排序权重" name="sort_weight" initialValue={0}>
@@ -653,11 +660,10 @@ export default function AdminRoutesPage() {
         </Form>
       </Modal>
 
-      {/* ==================== 批量导入预览弹窗 ==================== */}
       <Modal
-        title={`批量导入预览（有效 ${previewValidCount} 条）`}
+        title={`批量导入预览（有效 ${previewValidCount} 条，异常 ${previewErrorCount} 条）`}
         open={previewOpen}
-        width={800}
+        width={860}
         onCancel={() => setPreviewOpen(false)}
         onOk={() => void handleBatchCreate()}
         okText="确认导入"
@@ -670,9 +676,9 @@ export default function AdminRoutesPage() {
           dataSource={previewRows}
           size="small"
           pagination={false}
-          scroll={{ y: 400 }}
+          scroll={{ y: 420 }}
         />
       </Modal>
-    </>
+    </div>
   );
 }

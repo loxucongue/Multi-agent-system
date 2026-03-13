@@ -1,7 +1,8 @@
-﻿"use client";
+"use client";
 
-import { Alert, Button, Spin } from "antd";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Button, Spin, Typography } from "antd";
+import { MessageOutlined } from "@ant-design/icons";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import ChatInput from "@/components/chat/ChatInput";
@@ -10,20 +11,19 @@ import MessageList from "@/components/chat/MessageList";
 import QuickButtons from "@/components/chat/QuickButtons";
 import CompareDrawer from "@/components/compare/CompareDrawer";
 import LeadModal from "@/components/lead/LeadModal";
-import ActiveRouteCard, { type ActiveRouteCardData } from "@/components/route-card/ActiveRouteCard";
-import CandidateCards from "@/components/route-card/CandidateCards";
 import RouteDetailPanel from "@/components/route-card/RouteDetailPanel";
+import RouteWorkspace from "@/components/route-card/RouteWorkspace";
+import type { ActiveRouteCardData } from "@/components/route-card/ActiveRouteCard";
 import { useSSE } from "@/hooks/useSSE";
 import { API_BASE_URL, apiRequest } from "@/services/api";
 import { CURRENT_SESSION_KEY, useChatStore } from "@/stores/sessionStore";
 import type { CompareAIAnalysisResponse, CompareData, SessionDetailResponse } from "@/types";
 
+const { Text } = Typography;
+
 const deriveDays = (summary: string): number => {
   const match = summary.match(/(\d{1,2})\s*天/);
-  if (!match) {
-    return 0;
-  }
-  return Number(match[1]);
+  return match ? Number(match[1]) : 0;
 };
 
 const deriveHighlights = (summary: string): string[] => {
@@ -31,22 +31,25 @@ const deriveHighlights = (summary: string): string[] => {
     .split(/[，。；,;.!?\n]+/)
     .map((item) => item.trim())
     .filter((item) => item.length >= 4);
-  if (parts.length === 0) {
-    return ["行程亮点待确认"];
+
+  if (!parts.length) {
+    return ["路线亮点待补充"];
   }
+
   return parts.slice(0, 5);
 };
 
 const dedupeRouteIds = (routeIds: number[]) => {
   const seen = new Set<number>();
   const result: number[] = [];
+
   routeIds.forEach((id) => {
-    if (seen.has(id)) {
-      return;
+    if (!seen.has(id)) {
+      seen.add(id);
+      result.push(id);
     }
-    seen.add(id);
-    result.push(id);
   });
+
   return result;
 };
 
@@ -55,12 +58,6 @@ export default function ChatPage() {
   const [activeCheckedForCompare, setActiveCheckedForCompare] = useState(false);
   const [candidateCheckedRouteIds, setCandidateCheckedRouteIds] = useState<number[]>([]);
   const [aiCompareLoading, setAiCompareLoading] = useState(false);
-
-  const [viewportWidth, setViewportWidth] = useState<number>(typeof window === "undefined" ? 1440 : window.innerWidth);
-  const [rightPanelWidth, setRightPanelWidth] = useState(360);
-  const [isResizingRightPanel, setIsResizingRightPanel] = useState(false);
-  const resizeStartXRef = useRef(0);
-  const resizeStartWidthRef = useRef(360);
 
   const { connect, disconnect } = useSSE();
 
@@ -135,11 +132,11 @@ export default function ChatPage() {
             if (response.status === 404 || response.status === 410) {
               window.localStorage.removeItem(CURRENT_SESSION_KEY);
             } else if (!cancelled) {
-              setError("恢复会话失败，已为您创建新会话。");
+              setError("恢复会话失败，已为你创建新会话。");
             }
           } catch {
             if (!cancelled) {
-              setError("恢复会话失败，已为您创建新会话。");
+              setError("恢复会话失败，已为你创建新会话。");
             }
           }
         }
@@ -150,7 +147,7 @@ export default function ChatPage() {
         }
       } catch {
         if (!cancelled) {
-          setError("创建会话失败：无法连接后端服务，请先启动 backend(8000)");
+          setError("创建会话失败，请确认后端服务已启动。");
         }
       } finally {
         if (!cancelled) {
@@ -175,58 +172,6 @@ export default function ChatPage() {
     disconnect();
   }, [disconnect, sessionId]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const onResize = () => setViewportWidth(window.innerWidth);
-    onResize();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  const rightPanelMinWidth = 280;
-  const rightPanelMaxWidth = useMemo(() => Math.max(320, Math.floor(viewportWidth / 3)), [viewportWidth]);
-
-  const clampRightPanelWidth = useCallback(
-    (value: number) => Math.min(rightPanelMaxWidth, Math.max(rightPanelMinWidth, value)),
-    [rightPanelMaxWidth],
-  );
-
-  useEffect(() => {
-    setRightPanelWidth((prev) => clampRightPanelWidth(prev));
-  }, [clampRightPanelWidth]);
-
-  useEffect(() => {
-    if (!isResizingRightPanel) {
-      return;
-    }
-
-    const onMouseMove = (event: MouseEvent) => {
-      const delta = resizeStartXRef.current - event.clientX;
-      const nextWidth = clampRightPanelWidth(resizeStartWidthRef.current + delta);
-      setRightPanelWidth(nextWidth);
-    };
-
-    const onMouseUp = () => {
-      setIsResizingRightPanel(false);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    };
-
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    };
-  }, [clampRightPanelWidth, isResizingRightPanel]);
-
   const handleSend = useCallback(
     async (text: string) => {
       setError(null);
@@ -241,7 +186,7 @@ export default function ChatPage() {
   const handleCompare = useCallback(
     async (routeIds: number[]) => {
       if (!sessionId) {
-        setError("会话不存在，请刷新页面后重试");
+        setError("会话不存在，请刷新页面后重试。");
         return;
       }
 
@@ -252,7 +197,7 @@ export default function ChatPage() {
       finalIds = dedupeRouteIds(finalIds).slice(0, 5);
 
       if (finalIds.length < 2) {
-        setError("至少需要两条线路进行对比");
+        setError("至少需要两条路线才能开始对比。");
         return;
       }
 
@@ -265,7 +210,7 @@ export default function ChatPage() {
         setCompareDrawerVisible(true);
         applyStatePatch({ stage: "comparing" });
       } catch {
-        setError("获取对比数据失败，请稍后重试");
+        setError("获取对比数据失败，请稍后重试。");
       }
     },
     [activeCheckedForCompare, activeRouteId, applyStatePatch, sessionId, setCompareData, setCompareDrawerVisible, setError],
@@ -273,13 +218,13 @@ export default function ChatPage() {
 
   const handleAICompare = useCallback(async () => {
     if (!sessionId || !compareData?.routes?.length) {
-      setError("暂无可分析的对比数据");
+      setError("当前没有可分析的对比数据。");
       return;
     }
 
     const routeIds = dedupeRouteIds(compareData.routes.map((item) => item.route_id)).slice(0, 2);
     if (routeIds.length < 2) {
-      setError("至少需要两条线路才能进行 AI 对比分析");
+      setError("至少需要两条路线才能进行 AI 对比分析。");
       return;
     }
 
@@ -289,11 +234,12 @@ export default function ChatPage() {
         method: "POST",
         body: JSON.stringify({ route_ids: routeIds }),
       });
+
       if (result.analysis.trim()) {
         addAssistantMessage(result.analysis.trim());
       }
     } catch {
-      setError("AI 对比分析失败，请稍后重试");
+      setError("AI 对比分析失败，请稍后再试。");
     } finally {
       setAiCompareLoading(false);
     }
@@ -302,14 +248,14 @@ export default function ChatPage() {
   const handleOpenRouteDetail = useCallback(
     async (routeId: number, scrollToPrice = false) => {
       if (!sessionId) {
-        setError("会话不存在，请刷新页面后重试");
+        setError("会话不存在，请刷新页面后重试。");
         return;
       }
+
       await openRouteDetail(sessionId, routeId);
       if (scrollToPrice) {
         window.setTimeout(() => {
-          const section = document.getElementById("route-detail-price");
-          section?.scrollIntoView({ behavior: "smooth", block: "start" });
+          document.getElementById("route-detail-price")?.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 60);
       }
     },
@@ -320,22 +266,24 @@ export default function ChatPage() {
 
   const candidateCards = useMemo(() => {
     const candidateIdSet = new Set(candidateRouteIds);
-    const filtered = routeCards.filter((card) => {
+    return routeCards.filter((card) => {
       if (card.id === activeRouteId) {
         return false;
       }
+
       if (candidateIdSet.size > 0) {
         return candidateIdSet.has(card.id);
       }
+
       return true;
     });
-    return filtered;
   }, [activeRouteId, candidateRouteIds, routeCards]);
 
   const activeRouteCard = useMemo<ActiveRouteCardData | null>(() => {
     if (!activeRoute) {
       return null;
     }
+
     return {
       id: activeRoute.id,
       name: activeRoute.name,
@@ -344,6 +292,8 @@ export default function ChatPage() {
       supplier: "平台精选",
       days: deriveDays(activeRoute.summary),
       highlights: deriveHighlights(activeRoute.summary),
+      price_min: activeRoute.price_min,
+      price_max: activeRoute.price_max,
     };
   }, [activeRoute]);
 
@@ -361,86 +311,99 @@ export default function ChatPage() {
     if (!lastUserMessage || isStreaming) {
       return;
     }
+
     await handleSend(lastUserMessage.content);
   };
+
+  const compareSelectedCount =
+    candidateCheckedRouteIds.length + (activeCheckedForCompare && activeRouteId !== null ? 1 : 0);
+
+  const routeWorkspace = (
+    <RouteWorkspace
+      activeRouteId={activeRouteId}
+      activeRoute={activeRouteCard}
+      activeCheckedForCompare={activeCheckedForCompare}
+      onActiveCheckedForCompareChange={setActiveCheckedForCompare}
+      candidateCards={candidateCards}
+      candidateCheckedRouteIds={candidateCheckedRouteIds}
+      onCandidateCheckedRouteIdsChange={setCandidateCheckedRouteIds}
+      compareSelectedCount={compareSelectedCount}
+      compareData={compareData}
+      aiCompareLoading={aiCompareLoading}
+      onOpenRouteDetail={(routeId, scrollToPrice) => {
+        void handleOpenRouteDetail(routeId, scrollToPrice);
+      }}
+      onGuideRematch={() => {
+        void handleSend("请重新为我匹配符合当前条件的旅游路线，我可以继续补充需求。");
+      }}
+      onCompare={(routeIds) => {
+        void handleCompare(routeIds);
+      }}
+      onOpenCompareDrawer={() => {
+        setCompareDrawerVisible(true);
+      }}
+      onAICompare={() => {
+        void handleAICompare();
+      }}
+    />
+  );
 
   if (initializing) {
     return (
       <ChatLayout>
-        <div className="flex h-full items-center justify-center">
+        <div className="loading-shell">
           <Spin description="正在恢复会话..." />
         </div>
+
+        <style jsx>{`
+          .loading-shell {
+            display: flex;
+            height: 100%;
+            align-items: center;
+            justify-content: center;
+          }
+        `}</style>
       </ChatLayout>
     );
   }
 
   return (
     <ChatLayout>
-      <div className="flex h-full">
-        <div className="flex-1 flex flex-col min-w-0">
-          <MessageList />
-
-          {error ? (
-            <div style={{ marginTop: 10 }}>
-              <Alert
-                type="error"
-                showIcon
-                title={error}
-                action={
-                  <Button size="small" disabled={!lastUserMessage || isStreaming} onClick={() => void handleRetry()}>
-                    重试
-                  </Button>
-                }
-              />
+      <div className="page-shell">
+        <div className="chat-column">
+          <div className="chat-panel">
+            <div className="hint-bar">
+              <MessageOutlined />
+              <Text>先描述你的旅行需求，我会同步推荐路线并在右侧整理方案。</Text>
             </div>
-          ) : null}
 
-          <QuickButtons onSend={handleSend} />
-          <ChatInput onSend={handleSend} />
-        </div>
+            <MessageList />
 
-        <div className="hidden lg:flex" style={{ height: "100%" }}>
-          <div
-            role="separator"
-            aria-label="resize-right-panel"
-            style={{ width: 8, cursor: "col-resize", background: isResizingRightPanel ? "#d9d9d9" : "transparent" }}
-            onMouseDown={(event) => {
-              resizeStartXRef.current = event.clientX;
-              resizeStartWidthRef.current = rightPanelWidth;
-              setIsResizingRightPanel(true);
-            }}
-          />
+            {error ? (
+              <div className="error-row">
+                <Alert
+                  type="error"
+                  showIcon
+                  message={error}
+                  action={
+                    <Button size="small" disabled={!lastUserMessage || isStreaming} onClick={() => void handleRetry()}>
+                      重试
+                    </Button>
+                  }
+                />
+              </div>
+            ) : null}
 
-          <div style={{ width: rightPanelWidth, borderLeft: "1px solid #f0f0f0", padding: 16, overflowY: "auto" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <ActiveRouteCard
-                activeRouteId={activeRouteId}
-                route={activeRouteCard}
-                compareChecked={activeCheckedForCompare}
-                onCompareCheckedChange={setActiveCheckedForCompare}
-                onViewItinerary={(route) => {
-                  void handleOpenRouteDetail(route.id);
-                }}
-              />
+            <div className="mobile-workspace">{routeWorkspace}</div>
 
-              <CandidateCards
-                cards={candidateCards}
-                selectedRouteIds={candidateCheckedRouteIds}
-                onSelectedRouteIdsChange={setCandidateCheckedRouteIds}
-                extraSelectedCount={activeCheckedForCompare && activeRouteId !== null ? 1 : 0}
-                onGuideRematch={() => {
-                  void handleSend("请重新为我匹配符合当前条件的旅游线路，我可以继续补充需求");
-                }}
-                onSelect={(routeId) => {
-                  void handleOpenRouteDetail(routeId);
-                }}
-                onCompare={(routeIds) => {
-                  void handleCompare(routeIds);
-                }}
-              />
+            <div className="footer-shell">
+              <QuickButtons onSend={handleSend} />
+              <ChatInput onSend={handleSend} />
             </div>
           </div>
         </div>
+
+        <aside className="workspace-column">{routeWorkspace}</aside>
       </div>
 
       <CompareDrawer
@@ -468,6 +431,100 @@ export default function ChatPage() {
         loading={Boolean(routeDetailPanel?.loading)}
         onClose={closeRouteDetail}
       />
+
+      <style jsx>{`
+        .page-shell {
+          flex: 1 1 auto;
+          height: calc(100dvh - 64px);
+          min-height: calc(100dvh - 64px);
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 360px;
+          gap: 16px;
+          min-width: 0;
+          padding: 16px;
+          overflow: hidden;
+        }
+
+        .chat-column,
+        .workspace-column {
+          min-width: 0;
+          min-height: 0;
+          height: 100%;
+        }
+
+        .chat-panel,
+        .workspace-column {
+          min-height: 0;
+          border-radius: 24px;
+          border: 1px solid #e6ebf2;
+          background: #ffffff;
+        }
+
+        .chat-panel {
+          height: 100%;
+          display: flex;
+          flex-direction: column;
+          padding: 16px;
+          gap: 12px;
+        }
+
+        .workspace-column {
+          height: 100%;
+          overflow-y: auto;
+          padding: 16px;
+        }
+
+        .hint-bar {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          min-height: 40px;
+          padding: 10px 12px;
+          border-radius: 14px;
+          background: #f8fafc;
+          color: #64748b;
+        }
+
+        .error-row {
+          margin-top: -4px;
+        }
+
+        .footer-shell {
+          display: grid;
+          gap: 12px;
+          padding-top: 4px;
+        }
+
+        .mobile-workspace {
+          display: none;
+        }
+
+        @media (max-width: 1199px) {
+          .page-shell {
+            height: calc(100dvh - 64px);
+            grid-template-columns: minmax(0, 1fr);
+          }
+
+          .workspace-column {
+            display: none;
+          }
+
+          .mobile-workspace {
+            display: block;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .page-shell {
+            padding: 12px;
+          }
+
+          .chat-panel {
+            padding: 12px;
+            border-radius: 18px;
+          }
+        }
+      `}</style>
     </ChatLayout>
   );
 }

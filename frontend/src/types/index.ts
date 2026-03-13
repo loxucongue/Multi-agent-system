@@ -51,6 +51,8 @@ export interface RouteDetail {
   included: string;
   features: string | null;
   cost_excluded: string | null;
+  age_limit: string | null;
+  certificate_limit: string | null;
   doc_url: string;
   is_hot: boolean;
   sort_weight: number;

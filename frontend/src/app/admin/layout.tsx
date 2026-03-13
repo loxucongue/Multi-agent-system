@@ -11,28 +11,32 @@ import {
 } from "@ant-design/icons";
 import { Button, Layout, Menu, Spin, Typography } from "antd";
 import type { MenuProps } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useShallow } from "zustand/react/shallow";
 
 import { useAdminStore } from "@/stores/adminStore";
 
 const { Header, Sider, Content } = Layout;
-const { Text } = Typography;
+const { Paragraph, Text, Title } = Typography;
 
 const MENU_ITEMS: MenuProps["items"] = [
   { key: "/admin/routes", icon: <CompassOutlined />, label: "线路管理" },
-  { key: "/admin/prompts", icon: <AppstoreOutlined />, label: "Prompt管理" },
+  { key: "/admin/prompts", icon: <AppstoreOutlined />, label: "Prompt 管理" },
   { key: "/admin/kb", icon: <DatabaseOutlined />, label: "知识库管理" },
   { key: "/admin/logs", icon: <FileSearchOutlined />, label: "日志查看" },
-  { key: "/admin/coze-logs", icon: <ApiOutlined />, label: "Coze调用日志" },
+  { key: "/admin/coze-logs", icon: <ApiOutlined />, label: "Coze 调用日志" },
   { key: "/admin/config", icon: <SettingOutlined />, label: "系统配置" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [hydrated, setHydrated] = useState(false);
+  const hydrated = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
 
   const { token, logout } = useAdminStore(
     useShallow((state) => ({
@@ -44,22 +48,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const isLoginPage = pathname === "/admin/login";
 
   useEffect(() => {
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
     if (!hydrated) {
       return;
     }
 
-    if (isLoginPage) {
-      if (token) {
-        router.replace("/admin/prompts");
-      }
+    if (isLoginPage && token) {
+      router.replace("/admin/prompts");
       return;
     }
 
-    if (!token) {
+    if (!isLoginPage && !token) {
       router.replace("/admin/login");
     }
   }, [hydrated, isLoginPage, router, token]);
@@ -107,11 +105,32 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }
 
   return (
-    <Layout style={{ minHeight: "100vh" }}>
-      <Sider width={240}>
-        <div style={{ padding: 16, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
-          <Text style={{ color: "#fff", fontSize: 16, fontWeight: 600 }}>管理后台</Text>
+    <Layout style={{ minHeight: "100vh", background: "transparent" }}>
+      <Sider
+        width={264}
+        style={{
+          background: "linear-gradient(180deg, #082f49 0%, #0f766e 100%)",
+          padding: 14,
+        }}
+      >
+        <div
+          style={{
+            padding: 18,
+            borderRadius: 24,
+            background: "rgba(255,255,255,0.08)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            marginBottom: 14,
+          }}
+        >
+          <Text style={{ color: "rgba(255,255,255,0.72)" }}>管理后台</Text>
+          <Title level={4} style={{ color: "#fff", margin: "8px 0 6px" }}>
+            旅游路线智能顾问
+          </Title>
+          <Paragraph style={{ color: "rgba(255,255,255,0.7)", marginBottom: 0 }}>
+            管理用户侧所有路线展示、提示词、日志与配置能力。
+          </Paragraph>
         </div>
+
         <Menu
           theme="dark"
           mode="inline"
@@ -120,33 +139,46 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           onClick={(info) => {
             router.push(info.key);
           }}
+          style={{
+            background: "transparent",
+            borderInlineEnd: 0,
+          }}
         />
       </Sider>
 
       <Layout>
         <Header
           style={{
-            background: "#fff",
-            borderBottom: "1px solid #f0f0f0",
+            height: "auto",
+            padding: "18px 20px",
+            background: "rgba(255,255,255,0.76)",
+            borderBottom: "1px solid rgba(125, 181, 211, 0.2)",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            paddingInline: 16,
+            gap: 12,
+            flexWrap: "wrap",
           }}
         >
-          <Text strong>旅游路线智能顾问 · 管理后台</Text>
+          <div>
+            <Text type="secondary">Admin Workspace</Text>
+            <Title level={4} style={{ margin: "4px 0 0" }}>
+              运营与线路内容中心
+            </Title>
+          </div>
           <Button
             icon={<LogoutOutlined />}
             onClick={() => {
               logout();
               router.replace("/admin/login");
             }}
+            style={{ borderRadius: 999 }}
           >
-            退出
+            退出登录
           </Button>
         </Header>
 
-        <Content style={{ padding: 16, background: "#f5f7fa" }}>{children}</Content>
+        <Content style={{ padding: 16, background: "transparent" }}>{children}</Content>
       </Layout>
     </Layout>
   );

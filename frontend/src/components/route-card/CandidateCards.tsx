@@ -1,7 +1,8 @@
-﻿"use client";
+"use client";
 
-import { Button, Card, Checkbox, Empty, Skeleton, Space, Tag, Typography } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { CheckCircleOutlined, CompassOutlined, SwapOutlined } from "@ant-design/icons";
+import { Button, Card, Checkbox, Empty, Skeleton, Tag, Typography } from "antd";
+import { useMemo, useState } from "react";
 
 import type { RouteCard } from "@/types";
 
@@ -20,21 +21,28 @@ interface CandidateCardsProps {
 
 const deriveDays = (summary: string): number => {
   const match = summary.match(/(\d{1,2})\s*天/);
-  if (!match) {
-    return 0;
-  }
-  return Number(match[1]);
+  return match ? Number(match[1]) : 0;
 };
 
 const deriveHighlights = (summary: string): string[] => {
   const parts = summary
     .split(/[，。；,;.!?\n]+/)
     .map((item) => item.trim())
-    .filter((item) => item.length >= 3);
-  if (parts.length === 0) {
-    return ["行程亮点待确认"];
+    .filter((item) => item.length >= 4);
+
+  if (!parts.length) {
+    return ["亮点信息待补充"];
   }
-  return parts.slice(0, 5);
+
+  return parts.slice(0, 3);
+};
+
+const formatPrice = (card: RouteCard) => {
+  if (card.price_min == null || card.price_max == null) {
+    return "待报价确认";
+  }
+
+  return `¥${card.price_min} - ¥${card.price_max}`;
 };
 
 export default function CandidateCards({
@@ -49,161 +57,309 @@ export default function CandidateCards({
 }: CandidateCardsProps) {
   const [internalSelectedRouteIds, setInternalSelectedRouteIds] = useState<number[]>([]);
   const isControlled = Array.isArray(selectedRouteIds);
-  const currentSelectedRouteIds = isControlled ? selectedRouteIds : internalSelectedRouteIds;
+  const rawSelectedRouteIds = isControlled ? selectedRouteIds : internalSelectedRouteIds;
+
+  const validRouteIds = useMemo(() => new Set(cards.map((card) => card.id)), [cards]);
+  const currentSelectedRouteIds = useMemo(
+    () => rawSelectedRouteIds.filter((id) => validRouteIds.has(id)),
+    [rawSelectedRouteIds, validRouteIds],
+  );
 
   const setSelectedRouteIds = (updater: (prev: number[]) => number[]) => {
+    const next = updater(currentSelectedRouteIds);
     if (isControlled) {
-      const next = updater(currentSelectedRouteIds);
-      const sameLength = next.length === currentSelectedRouteIds.length;
-      const sameItems = sameLength && next.every((id, index) => id === currentSelectedRouteIds[index]);
-      if (!sameItems) {
-        onSelectedRouteIdsChange?.(next);
-      }
+      onSelectedRouteIdsChange?.(next);
       return;
     }
-    setInternalSelectedRouteIds(updater);
-  };
 
-  useEffect(() => {
-    const validIds = new Set(cards.map((card) => card.id));
-    setSelectedRouteIds((prev) => prev.filter((id) => validIds.has(id)));
-  }, [cards, isControlled, currentSelectedRouteIds]);
+    setInternalSelectedRouteIds(next);
+  };
 
   const selectedCount = currentSelectedRouteIds.length + Math.max(0, extraSelectedCount);
   const canCompare = selectedCount >= 2;
 
-  const cardsById = useMemo(() => {
-    const map = new Map<number, RouteCard>();
-    cards.forEach((card) => {
-      map.set(card.id, card);
-    });
-    return map;
-  }, [cards]);
-
-  const toggleSelection = (routeId: number, checked: boolean) => {
-    setSelectedRouteIds((prev) => {
-      if (checked) {
-        return prev.includes(routeId) ? prev : [...prev, routeId];
-      }
-      return prev.filter((id) => id !== routeId);
-    });
-  };
-
   if (loading) {
     return (
-      <div style={{ marginTop: 12 }}>
-        <Space direction="vertical" size={12} style={{ width: "100%" }}>
-          {[0, 1, 2].map((index) => (
-            <Card key={index} style={{ width: "100%" }}>
-              <Skeleton active paragraph={{ rows: 4 }} />
-            </Card>
-          ))}
-        </Space>
+      <div className="loading-list">
+        {[0, 1, 2].map((item) => (
+          <Card key={item} className="loading-card">
+            <Skeleton active paragraph={{ rows: 4 }} />
+          </Card>
+        ))}
+
+        <style jsx>{`
+          .loading-list {
+            display: grid;
+            gap: 12px;
+          }
+
+          :global(.loading-card) {
+            border-radius: 18px;
+          }
+        `}</style>
       </div>
     );
   }
 
-  if (cards.length === 0) {
+  if (!cards.length) {
     return (
-      <Card style={{ marginTop: 12 }}>
-        <Empty description="当前没有符合条件的候选线路" />
+      <div className="empty-card">
+        <Empty description="当前没有符合条件的候选路线。" />
         {onGuideRematch ? (
-          <div style={{ marginTop: 8, textAlign: "center" }}>
-            <Button onClick={onGuideRematch}>重新引导匹配需求</Button>
-          </div>
+          <Button onClick={onGuideRematch} className="rematch-button">
+            重新引导匹配需求
+          </Button>
         ) : null}
-      </Card>
+
+        <style jsx>{`
+          .empty-card {
+            display: grid;
+            justify-items: center;
+            gap: 12px;
+            padding: 28px 18px;
+            border-radius: 18px;
+            border: 1px solid #e5ebf3;
+            background: #ffffff;
+          }
+
+          .rematch-button {
+            border-radius: 999px;
+          }
+        `}</style>
+      </div>
     );
   }
 
   return (
-    <div style={{ marginTop: 12 }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: 72 }}>
-        {cards.map((card) => {
+    <div className="candidate-shell">
+      <div className="candidate-head">
+        <div>
+          <Title level={5} style={{ margin: 0, color: "#111827" }}>
+            候选方案
+          </Title>
+          <Text type="secondary">已整理 {cards.length} 条可进一步比较的路线。</Text>
+        </div>
+      </div>
+
+      <div className="candidate-list">
+        {cards.map((card, index) => {
           const checked = currentSelectedRouteIds.includes(card.id);
           const days = deriveDays(card.summary);
           const highlights = deriveHighlights(card.summary);
-          return (
-            <Card key={card.id} style={{ width: "100%" }}>
-              <Space direction="vertical" size={10} style={{ width: "100%" }}>
-                <Space size={8} align="center">
-                  <Checkbox checked={checked} onChange={(event) => toggleSelection(card.id, event.target.checked)} />
-                  <Text>加入对比</Text>
-                </Space>
 
-                <Space size={8} align="start" style={{ justifyContent: "space-between", width: "100%" }}>
-                  <Title level={5} style={{ margin: 0, maxWidth: "78%" }}>
+          return (
+            <div key={card.id} className={`candidate-card ${checked ? "checked" : ""}`}>
+              <div className="card-top">
+                <label className="select-toggle">
+                  <Checkbox
+                    checked={checked}
+                    onChange={(event) => {
+                      setSelectedRouteIds((prev) => {
+                        if (event.target.checked) {
+                          return prev.includes(card.id) ? prev : [...prev, card.id];
+                        }
+                        return prev.filter((id) => id !== card.id);
+                      });
+                    }}
+                  />
+                  <span>加入对比</span>
+                </label>
+
+                <div className="badge-group">
+                  <Tag color={index === 0 ? "blue" : "default"}>{index === 0 ? "优先候选" : "候选路线"}</Tag>
+                  <Tag>{days > 0 ? `${days} 天` : "天数待确认"}</Tag>
+                </div>
+              </div>
+
+              <div className="title-row">
+                <div>
+                  <Title level={5} style={{ margin: 0, color: "#111827" }}>
                     {card.name}
                   </Title>
-                  <Tag color="blue">候选方案</Tag>
-                </Space>
-
-                <Text type="secondary">供应商：平台精选 · 天数：{days}天</Text>
-
-                <div style={{ borderTop: "1px solid #f0f0f0", paddingTop: 8 }}>
-                  <Text strong>亮点</Text>
-                  <ul style={{ margin: "8px 0 0 18px", padding: 0 }}>
-                    {highlights.map((highlight) => (
-                      <li key={`${card.id}-${highlight}`} style={{ marginBottom: 4 }}>
-                        {highlight}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div>
-                  <Text strong>标签</Text>
-                  <div style={{ marginTop: 8 }}>
+                  <div className="tag-row">
                     {card.tags.map((tag) => (
-                      <Tag key={`${card.id}-${tag}`}>{tag}</Tag>
+                      <Tag key={`${card.id}-${tag}`} className="route-tag" icon={<CompassOutlined />}>
+                        {tag}
+                      </Tag>
                     ))}
                   </div>
                 </div>
 
-                <div>
-                  <Text strong>摘要</Text>
-                  <Paragraph ellipsis={{ rows: 3, tooltip: card.summary }} style={{ marginBottom: 0, marginTop: 8 }}>
-                    {card.summary}
-                  </Paragraph>
+                <div className="price-box">
+                  <span className="price-label">参考价格</span>
+                  <span className="price-value">{formatPrice(card)}</span>
                 </div>
+              </div>
 
-                <Button block onClick={() => onSelect(card.id)}>
-                  查看详情
-                </Button>
-              </Space>
-            </Card>
+              <Paragraph className="summary" ellipsis={{ rows: 3, tooltip: card.summary }}>
+                {card.summary}
+              </Paragraph>
+
+              <div className="highlight-list">
+                {highlights.map((highlight) => (
+                  <div key={`${card.id}-${highlight}`} className="highlight-item">
+                    <CheckCircleOutlined />
+                    <span>{highlight}</span>
+                  </div>
+                ))}
+              </div>
+
+              <Button block onClick={() => onSelect(card.id)} className="detail-button">
+                查看详情与每日行程
+              </Button>
+            </div>
           );
         })}
       </div>
 
-      <div
-        style={{
-          position: "sticky",
-          bottom: 0,
-          zIndex: 10,
-          background: "#f5f7fb",
-          borderTop: "1px solid #dbe3f3",
-          paddingTop: 10,
-          paddingBottom: 8,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <Text type="secondary">已选 {selectedCount} 条线路</Text>
+      <div className="compare-bar">
+        <div>
+          <Text strong style={{ color: "#111827" }}>
+            已选 {selectedCount} 条路线
+          </Text>
+          <div className="compare-hint">至少选择 2 条路线后可发起对比。</div>
+        </div>
+
         <Button
           type="primary"
+          icon={<SwapOutlined />}
           disabled={!canCompare}
           onClick={() => {
-            const finalIds = currentSelectedRouteIds.filter((id) => cardsById.has(id));
-            onCompare(finalIds);
+            onCompare(currentSelectedRouteIds);
           }}
+          className="compare-button"
         >
-          对比选中线路
+          开始对比
         </Button>
       </div>
+
+      <style jsx>{`
+        .candidate-shell {
+          display: grid;
+          gap: 12px;
+        }
+
+        .candidate-head {
+          padding: 4px 2px 0;
+        }
+
+        .candidate-list {
+          display: grid;
+          gap: 12px;
+        }
+
+        .candidate-card {
+          display: grid;
+          gap: 14px;
+          padding: 16px;
+          border-radius: 18px;
+          border: 1px solid #e5ebf3;
+          background: #ffffff;
+        }
+
+        .candidate-card.checked {
+          border-color: #bfd7ff;
+          box-shadow: 0 10px 24px rgba(47, 128, 237, 0.08);
+        }
+
+        .card-top,
+        .title-row,
+        .compare-bar {
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          align-items: flex-start;
+          flex-wrap: wrap;
+        }
+
+        .select-toggle {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          color: #475569;
+          cursor: pointer;
+        }
+
+        .badge-group {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+
+        .price-box {
+          min-width: 124px;
+          padding: 10px 12px;
+          border-radius: 14px;
+          background: #f8fafc;
+          border: 1px solid #e5ebf3;
+          display: grid;
+          gap: 4px;
+        }
+
+        .price-label,
+        .compare-hint {
+          font-size: 12px;
+          color: #8a94a6;
+        }
+
+        .price-value {
+          color: #111827;
+          font-weight: 700;
+        }
+
+        .tag-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 10px;
+        }
+
+        :global(.route-tag) {
+          margin: 0;
+          border-radius: 999px;
+          color: #475569;
+          background: #f8fafc;
+          border-color: #dbe3ee;
+        }
+
+        .summary {
+          margin: 0;
+          color: #4b5563;
+        }
+
+        .highlight-list {
+          display: grid;
+          gap: 8px;
+        }
+
+        .highlight-item {
+          display: flex;
+          gap: 8px;
+          align-items: flex-start;
+          padding: 10px 12px;
+          border-radius: 14px;
+          background: #f8fafc;
+          color: #475569;
+        }
+
+        .detail-button,
+        .compare-button {
+          height: 40px;
+          border-radius: 12px;
+          font-weight: 600;
+        }
+
+        .compare-bar {
+          position: sticky;
+          bottom: 0;
+          padding: 14px 16px;
+          border-radius: 18px;
+          border: 1px solid #e5ebf3;
+          background: rgba(255, 255, 255, 0.96);
+          box-shadow: 0 -6px 20px rgba(15, 23, 42, 0.05);
+          backdrop-filter: blur(8px);
+        }
+      `}</style>
     </div>
   );
 }
