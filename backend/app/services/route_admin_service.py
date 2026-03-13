@@ -22,11 +22,14 @@ from app.models.schemas import (
     RouteCreateResponse,
     RouteParseResult,
 )
+from app.services.config_service import ConfigService
 from app.services.workflow_service import WorkflowService
 from app.utils.logger import get_logger
 
 _PARSE_KEY_PREFIX = "route_parse:"
 _PARSE_TTL = 3600
+_DEFAULT_ROUTE_PARSE_MAX_RETRIES = 3
+_MAX_ROUTE_PARSE_RETRIES = 4
 
 
 class RouteAdminService:
@@ -38,11 +41,13 @@ class RouteAdminService:
         workflow_service: WorkflowService | None,
         redis: aioredis.Redis | None,
         settings: Settings,
+        config_service: ConfigService | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._workflow = workflow_service
         self._redis = redis
         self._settings = settings
+        self._config_service = config_service
         self._logger = get_logger(__name__)
         self._semaphore = asyncio.Semaphore(settings.COZE_PARSE_CONCURRENCY)
         self._parse_tasks: set[asyncio.Task] = set()
@@ -338,26 +343,101 @@ class RouteAdminService:
             if raw:
                 try:
                     status_data = json.loads(raw)
-                    if status_data.get("status") == "parsing":
+                    if status_data.get("status") in {"parsing", "retrying"}:
                         self._logger.info("skip parse route_id=%d: already parsing", route_id)
                         return
                 except json.JSONDecodeError:
                     pass
 
-        trace_id = str(uuid.uuid4())
-        await self._set_parse_status(route_id, "parsing", "\u5de5\u4f5c\u6d41\u6267\u884c\u4e2d")
-
         try:
-            async with self._semaphore:
-                result = await self._workflow.run_route_parse(doc_url, trace_id=trace_id)
-
+            result = await self._run_route_parse_with_retry(route_id, doc_url)
             await self._apply_parse_result(route_id, result)
             await self._set_parse_status(route_id, "done", "\u89e3\u6790\u5b8c\u6210")
-            self._logger.info("route parse done route_id=%d trace_id=%s", route_id, trace_id)
+            self._logger.info("route parse done route_id=%d", route_id)
 
         except Exception as exc:
-            self._logger.exception("route parse failed route_id=%d trace_id=%s", route_id, trace_id)
+            self._logger.exception("route parse failed route_id=%d", route_id)
             await self._set_parse_status(route_id, "failed", str(exc)[:500])
+
+    async def _run_route_parse_with_retry(self, route_id: int, doc_url: str) -> RouteParseResult:
+        """Run route parsing workflow with route-level retries and backoff."""
+
+        if self._workflow is None:
+            raise RuntimeError("workflow not configured")
+
+        max_retries = await self._get_route_parse_max_retries()
+        total_attempts = max_retries + 1
+        last_error: Exception | None = None
+
+        for attempt in range(1, total_attempts + 1):
+            trace_id = str(uuid.uuid4())
+            await self._set_parse_status(
+                route_id,
+                "parsing",
+                f"\u5de5\u4f5c\u6d41\u6267\u884c\u4e2d\uff08\u7b2c {attempt}/{total_attempts} \u6b21\uff09",
+            )
+
+            try:
+                async with self._semaphore:
+                    result = await self._workflow.run_route_parse(doc_url, trace_id=trace_id)
+                self._logger.info(
+                    "route parse workflow attempt succeeded route_id=%d attempt=%d/%d trace_id=%s",
+                    route_id,
+                    attempt,
+                    total_attempts,
+                    trace_id,
+                )
+                return result
+            except Exception as exc:
+                last_error = exc
+                self._logger.warning(
+                    "route parse workflow attempt failed route_id=%d attempt=%d/%d trace_id=%s error=%s",
+                    route_id,
+                    attempt,
+                    total_attempts,
+                    trace_id,
+                    exc,
+                )
+                if attempt >= total_attempts:
+                    break
+
+                delay_seconds = self._get_retry_delay_seconds(attempt)
+                await self._set_parse_status(
+                    route_id,
+                    "retrying",
+                    (
+                        f"\u7b2c {attempt} \u6b21\u89e3\u6790\u5931\u8d25\uff0c"
+                        f"{delay_seconds} \u79d2\u540e\u91cd\u8bd5\uff08\u6700\u591a\u91cd\u8bd5 {max_retries} \u6b21\uff09"
+                    ),
+                )
+                await asyncio.sleep(delay_seconds)
+
+        if last_error is None:
+            raise RuntimeError("route parse failed without specific error")
+        raise last_error
+
+    async def _get_route_parse_max_retries(self) -> int:
+        """Read route parse max retries from runtime config with safe bounds."""
+
+        if self._config_service is None:
+            return _DEFAULT_ROUTE_PARSE_MAX_RETRIES
+
+        configured = await self._config_service.get_int(
+            "route_parse_max_retries",
+            _DEFAULT_ROUTE_PARSE_MAX_RETRIES,
+        )
+        if configured < 0:
+            return 0
+        if configured > _MAX_ROUTE_PARSE_RETRIES:
+            return _MAX_ROUTE_PARSE_RETRIES
+        return configured
+
+    def _get_retry_delay_seconds(self, attempt: int) -> int:
+        """Return fixed backoff delay for the next retry."""
+
+        retry_backoff = [3, 8, 15, 30]
+        index = max(0, min(attempt - 1, len(retry_backoff) - 1))
+        return retry_backoff[index]
 
     async def _apply_parse_result(self, route_id: int, result: RouteParseResult) -> None:
         """Apply parse result fields to routes table.

@@ -1,4 +1,4 @@
-"""Targeted tests for route admin parsing updates."""
+"""Targeted tests for route admin parse updates and retry behavior."""
 
 from __future__ import annotations
 
@@ -43,6 +43,27 @@ class _CapturedSessionFactory:
         return self._session
 
 
+class _FakeConfigService:
+    def __init__(self, value: int) -> None:
+        self._value = value
+
+    async def get_int(self, key: str, default: int) -> int:
+        assert key == "route_parse_max_retries"
+        return self._value
+
+
+class _FakeWorkflow:
+    def __init__(self, failures_before_success: int) -> None:
+        self.failures_before_success = failures_before_success
+        self.calls = 0
+
+    async def run_route_parse(self, doc_url: str, trace_id: str) -> RouteParseResult:
+        self.calls += 1
+        if self.calls <= self.failures_before_success:
+            raise RuntimeError(f"transient-{self.calls}")
+        return RouteParseResult(basic_info=f"parsed:{doc_url}:{trace_id}")
+
+
 @pytest.mark.anyio
 async def test_apply_parse_result_skips_empty_fields() -> None:
     session = _CapturedSession()
@@ -54,15 +75,15 @@ async def test_apply_parse_result_skips_empty_fields() -> None:
     )
 
     result = RouteParseResult(
-        basic_info="7天6晚东京亲子线路",
-        highlights="迪士尼,亲子酒店",
+        basic_info="7-day family route",
+        highlights="Disney + resort hotel",
         index_tags=[],
         itinerary_days=[],
-        notices="旺季请提前锁位",
-        cost_included="机票、酒店",
-        cost_excluded="签证与个人消费",
-        age_limit="3岁以上",
-        certificate_limit="护照有效期 6 个月以上",
+        notices="Book early in peak season",
+        cost_included="Flights and hotels",
+        cost_excluded="Visa and personal expenses",
+        age_limit="3+",
+        certificate_limit="Passport valid for 6 months",
     )
 
     await service._apply_parse_result(1, result)
@@ -71,13 +92,13 @@ async def test_apply_parse_result_skips_empty_fields() -> None:
     assert session.last_stmt is not None
 
     params = session.last_stmt.compile().params
-    assert params["base_info"] == "7天6晚东京亲子线路"
-    assert params["highlights"] == "迪士尼,亲子酒店"
-    assert params["notice"] == "旺季请提前锁位"
-    assert params["included"] == "机票、酒店"
-    assert params["cost_excluded"] == "签证与个人消费"
-    assert params["age_limit"] == "3岁以上"
-    assert params["certificate_limit"] == "护照有效期 6 个月以上"
+    assert params["base_info"] == "7-day family route"
+    assert params["highlights"] == "Disney + resort hotel"
+    assert params["notice"] == "Book early in peak season"
+    assert params["included"] == "Flights and hotels"
+    assert params["cost_excluded"] == "Visa and personal expenses"
+    assert params["age_limit"] == "3+"
+    assert params["certificate_limit"] == "Passport valid for 6 months"
     assert "tags" not in params
     assert "itinerary_json" not in params
 
@@ -96,3 +117,51 @@ async def test_apply_parse_result_skips_update_when_all_fields_empty() -> None:
 
     assert session.last_stmt is None
     assert session.commit_called is False
+
+
+@pytest.mark.anyio
+async def test_route_parse_retry_limit_is_clamped_from_runtime_config() -> None:
+    service = RouteAdminService(
+        session_factory=_CapturedSessionFactory(_CapturedSession()),
+        workflow_service=None,
+        redis=None,
+        settings=Settings(),
+        config_service=_FakeConfigService(99),
+    )
+
+    assert await service._get_route_parse_max_retries() == 4
+
+
+@pytest.mark.anyio
+async def test_run_route_parse_with_retry_succeeds_after_transient_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    workflow = _FakeWorkflow(failures_before_success=2)
+    service = RouteAdminService(
+        session_factory=_CapturedSessionFactory(_CapturedSession()),
+        workflow_service=workflow,
+        redis=None,
+        settings=Settings(),
+        config_service=_FakeConfigService(3),
+    )
+
+    recorded_statuses: list[tuple[str, str]] = []
+
+    async def _fake_set_parse_status(route_id: int, status: str, message: str) -> None:
+        recorded_statuses.append((status, message))
+
+    async def _fake_sleep(delay: float) -> None:
+        return
+
+    monkeypatch.setattr(service, "_set_parse_status", _fake_set_parse_status)
+    monkeypatch.setattr("app.services.route_admin_service.asyncio.sleep", _fake_sleep)
+
+    result = await service._run_route_parse_with_retry(route_id=9, doc_url="https://example.com/9.pdf")
+
+    assert workflow.calls == 3
+    assert result.basic_info.startswith("parsed:https://example.com/9.pdf:")
+    assert [status for status, _ in recorded_statuses] == [
+        "parsing",
+        "retrying",
+        "parsing",
+        "retrying",
+        "parsing",
+    ]

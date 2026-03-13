@@ -100,7 +100,11 @@ class ServiceContainer:
                     "session_context_turns": (
                         "5",
                         "历史对话携带轮数，影响意图分类和回复生成的上下文窗口",
-                    )
+                    ),
+                    "route_parse_max_retries": (
+                        "3",
+                        "线路文档解析失败后的最大自动重试次数，建议配置为 3 或 4",
+                    ),
                 }
             )
             self._route_service = RouteService(session_factory=self._session_factory, redis=self._redis)
@@ -121,6 +125,7 @@ class ServiceContainer:
                 workflow_service=self._workflow_service,
                 redis=self._redis,
                 settings=settings,
+                config_service=self._config_service,
             )
 
             # Mark initialized before seeding prompts so service properties are accessible.
