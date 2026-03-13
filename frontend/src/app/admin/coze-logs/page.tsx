@@ -1,12 +1,12 @@
 ﻿"use client";
 
 import { App, Button, Card, DatePicker, Descriptions, Input, Modal, Select, Space, Table, Tag, Typography } from "antd";
-import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useShallow } from "zustand/react/shallow";
 
+import { type ResizableColumnsType, useResizableColumns } from "@/components/admin/ResizableTable";
 import { useAdminStore } from "@/stores/adminStore";
 
 const { RangePicker } = DatePicker;
@@ -165,7 +165,7 @@ export default function AdminCozeLogsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const columns: ColumnsType<CozeLog> = useMemo(
+  const columns: ResizableColumnsType<CozeLog> = useMemo(
     () => [
       {
         title: "时间",
@@ -250,6 +250,7 @@ export default function AdminCozeLogsPage() {
         title: "操作",
         key: "actions",
         width: 90,
+        resizable: false,
         render: (_, record) => (
           <Button
             size="small"
@@ -265,6 +266,8 @@ export default function AdminCozeLogsPage() {
     ],
     [],
   );
+
+  const [resizableColumns, resizableComponents] = useResizableColumns(columns);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -317,7 +320,8 @@ export default function AdminCozeLogsPage() {
         <Table
           rowKey="id"
           loading={loading}
-          columns={columns}
+          columns={resizableColumns}
+          components={resizableComponents}
           dataSource={logs}
           pagination={{
             current: page,

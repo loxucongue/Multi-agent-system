@@ -1,12 +1,12 @@
 "use client";
 
 import { App, Button, Card, DatePicker, Descriptions, Input, Modal, Space, Table, Typography } from "antd";
-import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useShallow } from "zustand/react/shallow";
 
+import { type ResizableColumnsType, useResizableColumns } from "@/components/admin/ResizableTable";
 import { useAdminStore } from "@/stores/adminStore";
 
 const { RangePicker } = DatePicker;
@@ -116,7 +116,7 @@ export default function AdminLogsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const columns: ColumnsType<AuditLog> = useMemo(
+  const columns: ResizableColumnsType<AuditLog> = useMemo(
     () => [
       {
         title: "时间",
@@ -173,6 +173,7 @@ export default function AdminLogsPage() {
         title: "操作",
         key: "actions",
         width: 90,
+        resizable: false,
         render: (_, record) => (
           <Button
             size="small"
@@ -188,6 +189,8 @@ export default function AdminLogsPage() {
     ],
     [],
   );
+
+  const [resizableColumns, resizableComponents] = useResizableColumns(columns);
 
   const llmCalls = useMemo(() => {
     const value = (activeLog?.api_params as { llm_calls?: unknown } | undefined)?.llm_calls;
@@ -238,7 +241,8 @@ export default function AdminLogsPage() {
       <Table
         rowKey={(row) => `${row.trace_id}-${row.id}`}
         loading={loading}
-        columns={columns}
+        columns={resizableColumns}
+        components={resizableComponents}
         dataSource={logs}
         pagination={{
           current: page,

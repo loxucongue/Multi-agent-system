@@ -1,5 +1,8 @@
 "use client";
 
+import "react-resizable/css/styles.css";
+import "./resizable.css";
+
 import {
   ApiOutlined,
   AppstoreOutlined,
