@@ -12,6 +12,7 @@ interface AdminStore {
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
   authedFetch: <T = unknown>(path: string, options?: RequestInit) => Promise<T>;
+  authedUpload: <T = unknown>(path: string, formData: FormData, options?: RequestInit) => Promise<T>;
 }
 
 const toError = async (response: Response): Promise<Error> => {
@@ -73,6 +74,38 @@ export const useAdminStore = create<AdminStore>()(
           ...options,
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            ...(options.headers ?? {}),
+          },
+        });
+
+        if (response.status === 401) {
+          get().logout();
+          throw new Error("登录已过期，请重新登录");
+        }
+
+        if (!response.ok) {
+          throw await toError(response);
+        }
+
+        if (response.status === 204) {
+          return undefined as T;
+        }
+
+        return (await response.json()) as T;
+      },
+
+      authedUpload: async <T = unknown>(path: string, formData: FormData, options: RequestInit = {}) => {
+        const token = get().token;
+        if (!token) {
+          throw new Error("未登录");
+        }
+
+        const response = await fetch(normalizePath(path), {
+          ...options,
+          method: options.method ?? "POST",
+          body: formData,
+          headers: {
             Authorization: `Bearer ${token}`,
             ...(options.headers ?? {}),
           },

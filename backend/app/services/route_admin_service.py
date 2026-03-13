@@ -360,19 +360,44 @@ class RouteAdminService:
             await self._set_parse_status(route_id, "failed", str(exc)[:500])
 
     async def _apply_parse_result(self, route_id: int, result: RouteParseResult) -> None:
-        """Apply parse result fields to routes table."""
+        """Apply parse result fields to routes table.
 
-        values: dict[str, Any] = {
-            "base_info": result.basic_info,
-            "highlights": result.highlights,
-            "tags": result.index_tags,
-            "itinerary_json": result.itinerary_days if result.itinerary_days else [],
-            "notice": result.notices,
-            "included": result.cost_included,
-            "cost_excluded": result.cost_excluded,
-            "age_limit": result.age_limit,
-            "certificate_limit": result.certificate_limit,
-        }
+        Only persist fields that the workflow actually produced. Empty strings
+        and empty lists are treated as "no update" so existing route data is
+        preserved during reparse.
+        """
+
+        field_mapping: list[tuple[str, Any]] = [
+            ("base_info", result.basic_info),
+            ("highlights", result.highlights),
+            ("tags", result.index_tags),
+            ("itinerary_json", result.itinerary_days if result.itinerary_days else []),
+            ("notice", result.notices),
+            ("included", result.cost_included),
+            ("cost_excluded", result.cost_excluded),
+            ("age_limit", result.age_limit),
+            ("certificate_limit", result.certificate_limit),
+        ]
+
+        values: dict[str, Any] = {}
+        for column_name, value in field_mapping:
+            if isinstance(value, str) and value.strip():
+                values[column_name] = value
+            elif isinstance(value, list) and len(value) > 0:
+                values[column_name] = value
+
+        if not values:
+            self._logger.warning(
+                "route parse returned all empty fields, skipping update for route_id=%d",
+                route_id,
+            )
+            return
+
+        self._logger.info(
+            "applying parse result route_id=%d updated_fields=%s",
+            route_id,
+            list(values.keys()),
+        )
 
         async with self._session_factory() as session:
             stmt = update(Route).where(Route.id == route_id).values(**values)

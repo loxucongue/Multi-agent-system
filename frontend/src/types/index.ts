@@ -28,11 +28,14 @@ export interface SessionState {
 export interface RouteCard {
   id: number;
   name: string;
+  supplier: string;
   tags: string[];
   summary: string;
   features?: string;
   doc_url: string;
   sort_weight: number;
+  days?: number | null;
+  highlight_tags?: string[];
   price_min: number | null;
   price_max: number | null;
 }

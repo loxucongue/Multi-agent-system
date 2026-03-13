@@ -23,6 +23,7 @@ export interface SessionHistoryItem {
 
 export const SESSION_HISTORY_KEY = "travel_session_history_v1";
 export const CURRENT_SESSION_KEY = "travel_current_session_id";
+export const SESSION_HISTORY_CHANGED_EVENT = "session-history-changed";
 
 interface ChatStore {
   sessionId: string | null;
@@ -193,6 +194,7 @@ const writeSessionHistory = (items: SessionHistoryItem[]) => {
     return;
   }
   window.localStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(items));
+  window.dispatchEvent(new Event(SESSION_HISTORY_CHANGED_EVENT));
 };
 
 const persistCurrentSessionId = (sessionId: string) => {

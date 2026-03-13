@@ -4,7 +4,6 @@ import {
   App,
   Button,
   Card,
-  Descriptions,
   Form,
   Input,
   InputNumber,
@@ -15,6 +14,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tabs,
   Typography,
   Upload,
 } from "antd";
@@ -32,7 +32,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useShallow } from "zustand/react/shallow";
 
-import { API_BASE_URL } from "@/services/api";
 import { useAdminStore } from "@/stores/adminStore";
 import type {
   ParseStatusResponse,
@@ -84,8 +83,8 @@ const formatPrice = (route: RouteListItem) => {
 export default function AdminRoutesPage() {
   const router = useRouter();
   const { message } = App.useApp();
-  const { authedFetch, logout } = useAdminStore(
-    useShallow((s) => ({ authedFetch: s.authedFetch, logout: s.logout })),
+  const { authedFetch, authedUpload, logout } = useAdminStore(
+    useShallow((s) => ({ authedFetch: s.authedFetch, authedUpload: s.authedUpload, logout: s.logout })),
   );
 
   const [routes, setRoutes] = useState<RouteListItem[]>([]);
@@ -291,25 +290,9 @@ export default function AdminRoutesPage() {
       try {
         const formData = new FormData();
         formData.append("file", file);
-        const token = useAdminStore.getState().token;
-        const resp = await fetch(`${API_BASE_URL}/admin/routes/batch/preview`, {
+        const data = await authedUpload<PreviewResponse>("/admin/routes/batch/preview", formData, {
           method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body: formData,
         });
-
-        if (resp.status === 401) {
-          logout();
-          router.replace("/admin/login");
-          return false;
-        }
-
-        if (!resp.ok) {
-          const errData = (await resp.json().catch(() => ({}))) as { detail?: string };
-          throw new Error(errData.detail ?? `上传失败：${resp.status}`);
-        }
-
-        const data = (await resp.json()) as PreviewResponse;
         setPreviewRows(data.rows);
         setPreviewValidCount(data.valid_count);
         setPreviewErrorCount(data.error_count);
@@ -357,6 +340,7 @@ export default function AdminRoutesPage() {
 
   const hotRoutesCount = useMemo(() => routes.filter((route) => route.is_hot).length, [routes]);
   const parsingCount = parsingIds.size;
+  const missingDocCount = useMemo(() => routes.filter((route) => !route.doc_url?.trim()).length, [routes]);
 
   const columns: ColumnsType<RouteListItem> = useMemo(
     () => [
@@ -506,7 +490,7 @@ export default function AdminRoutesPage() {
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
           <Card bordered={false} style={{ borderRadius: 22, background: "rgba(255,255,255,0.74)" }}>
-            <Statistic title="当前页线路数" value={routes.length} />
+            <Statistic title="缺少文档链接" value={missingDocCount} />
           </Card>
           <Card bordered={false} style={{ borderRadius: 22, background: "rgba(255,255,255,0.74)" }}>
             <Statistic title="热门线路数" value={hotRoutesCount} />
@@ -559,55 +543,72 @@ export default function AdminRoutesPage() {
         confirmLoading={editSubmitting}
         destroyOnClose
       >
-        <Form form={editForm} layout="vertical" style={{ maxHeight: 560, overflowY: "auto", paddingRight: 8 }}>
-          <Form.Item label="线路名称" name="name" rules={[{ required: true, message: "请输入线路名称" }]}>
-            <Input maxLength={200} />
-          </Form.Item>
-          <Form.Item label="供应商" name="supplier" rules={[{ required: true, message: "请输入供应商" }]}>
-            <Input maxLength={100} />
-          </Form.Item>
-          <Form.Item label="摘要" name="summary">
-            <TextArea rows={2} />
-          </Form.Item>
-          <Form.Item label="文档链接" name="doc_url" rules={[{ required: true, message: "请输入文档链接" }]}>
-            <Input maxLength={500} />
-          </Form.Item>
-          <Form.Item label="路线特色" name="features">
-            <Input maxLength={500} />
-          </Form.Item>
-
-          <Space style={{ width: "100%" }} wrap>
-            <Form.Item label="热门线路" name="is_hot" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-            <Form.Item label="排序权重" name="sort_weight">
-              <InputNumber min={0} max={9999} />
-            </Form.Item>
-          </Space>
-
-          <Descriptions title="解析字段修正" column={1} size="small" style={{ marginBottom: 16 }} />
-
-          <Form.Item label="亮点" name="highlights">
-            <TextArea rows={3} />
-          </Form.Item>
-          <Form.Item label="基本信息" name="base_info">
-            <TextArea rows={3} />
-          </Form.Item>
-          <Form.Item label="注意事项" name="notice">
-            <TextArea rows={3} />
-          </Form.Item>
-          <Form.Item label="费用包含" name="included">
-            <TextArea rows={3} />
-          </Form.Item>
-          <Form.Item label="费用不含" name="cost_excluded">
-            <TextArea rows={3} />
-          </Form.Item>
-          <Form.Item label="年龄限制" name="age_limit">
-            <Input />
-          </Form.Item>
-          <Form.Item label="证件要求" name="certificate_limit">
-            <Input />
-          </Form.Item>
+        <Form form={editForm} layout="vertical" style={{ maxHeight: "min(66vh, 560px)", overflowY: "auto", paddingRight: 8 }}>
+          <Tabs
+            destroyInactiveTabPane={false}
+            items={[
+              {
+                key: "basic",
+                label: "基本信息",
+                children: (
+                  <>
+                    <Form.Item label="线路名称" name="name" rules={[{ required: true, message: "请输入线路名称" }]}>
+                      <Input maxLength={200} />
+                    </Form.Item>
+                    <Form.Item label="供应商" name="supplier" rules={[{ required: true, message: "请输入供应商" }]}>
+                      <Input maxLength={100} />
+                    </Form.Item>
+                    <Form.Item label="摘要" name="summary">
+                      <TextArea rows={2} />
+                    </Form.Item>
+                    <Form.Item label="文档链接" name="doc_url" rules={[{ required: true, message: "请输入文档链接" }]}>
+                      <Input maxLength={500} />
+                    </Form.Item>
+                    <Form.Item label="路线特色" name="features">
+                      <Input maxLength={500} />
+                    </Form.Item>
+                    <Space style={{ width: "100%" }} wrap>
+                      <Form.Item label="热门线路" name="is_hot" valuePropName="checked">
+                        <Switch />
+                      </Form.Item>
+                      <Form.Item label="排序权重" name="sort_weight">
+                        <InputNumber min={0} max={9999} />
+                      </Form.Item>
+                    </Space>
+                  </>
+                ),
+              },
+              {
+                key: "parsed",
+                label: "Coze 解析字段",
+                children: (
+                  <>
+                    <Form.Item label="亮点" name="highlights">
+                      <TextArea rows={3} />
+                    </Form.Item>
+                    <Form.Item label="基本信息" name="base_info">
+                      <TextArea rows={3} />
+                    </Form.Item>
+                    <Form.Item label="注意事项" name="notice">
+                      <TextArea rows={3} />
+                    </Form.Item>
+                    <Form.Item label="费用包含" name="included">
+                      <TextArea rows={3} />
+                    </Form.Item>
+                    <Form.Item label="费用不含" name="cost_excluded">
+                      <TextArea rows={3} />
+                    </Form.Item>
+                    <Form.Item label="年龄限制" name="age_limit">
+                      <Input />
+                    </Form.Item>
+                    <Form.Item label="证件要求" name="certificate_limit">
+                      <Input />
+                    </Form.Item>
+                  </>
+                ),
+              },
+            ]}
+          />
         </Form>
       </Modal>
 

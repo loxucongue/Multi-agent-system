@@ -13,6 +13,7 @@ import {
   TagOutlined,
 } from "@ant-design/icons";
 import { Button, Empty, Skeleton, Tag, Typography } from "antd";
+import { useEffect, useRef } from "react";
 
 import type { RouteFullDetail } from "@/types";
 
@@ -220,6 +221,60 @@ const toPriceText = (data: RouteFullDetail | null): string => {
 };
 
 export default function RouteDetailPanel({ open, data, loading, onClose }: RouteDetailPanelProps) {
+  const shellRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const shell = shellRef.current;
+    const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    shell?.focus();
+
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (!open) {
+        return;
+      }
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const focusable = shell?.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+
+      if (!focusable || focusable.length === 0) {
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeydown);
+    return () => {
+      window.removeEventListener("keydown", handleKeydown);
+      previousActive?.focus();
+    };
+  }, [onClose, open]);
+
   if (!open) {
     return null;
   }
@@ -282,7 +337,7 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
             <div className="feature-tags">
               {featureTags.length > 0 ? (
                 featureTags.map((tag) => (
-                  <Tag key={`f-${tag}`} className="detail-tag" icon={<TagOutlined />}>
+                  <Tag key={`f-${tag}`} className="route-detail-tag" icon={<TagOutlined />}>
                     {tag}
                   </Tag>
                 ))
@@ -402,12 +457,12 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
   })();
 
   return (
-    <div role="dialog" aria-modal="true" onClick={onClose} className="panel-mask">
-      <div onClick={(event) => event.stopPropagation()} className="panel-shell">
+    <div role="dialog" aria-modal="true" aria-labelledby="route-detail-title" onClick={onClose} className="panel-mask">
+      <div ref={shellRef} tabIndex={-1} onClick={(event) => event.stopPropagation()} className="panel-shell">
         <div className="panel-header">
           <div>
             <Text type="secondary">路线详情</Text>
-            <Title level={5} style={{ margin: "2px 0 0" }}>
+            <Title id="route-detail-title" level={5} style={{ margin: "2px 0 0" }}>
               深入查看每日行程、费用说明和出行要求
             </Title>
           </div>
@@ -476,7 +531,7 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
           border: 1px solid #e6ebf2;
           background: #ffffff;
           display: grid;
-          grid-template-columns: 1.45fr 0.95fr;
+          grid-template-columns: 1fr;
           gap: 14px;
           padding: 18px;
         }
@@ -496,7 +551,7 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
           line-height: 1.2;
         }
 
-        :global(.detail-tag) {
+        :global(.route-detail-tag) {
           margin-inline-end: 0;
           border-radius: 999px;
           padding-inline: 10px;
@@ -516,6 +571,7 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
 
         .hero-side {
           display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
           gap: 12px;
         }
 

@@ -17,26 +17,17 @@ import type { ActiveRouteCardData } from "@/components/route-card/ActiveRouteCar
 import { useSSE } from "@/hooks/useSSE";
 import { API_BASE_URL, apiRequest } from "@/services/api";
 import { CURRENT_SESSION_KEY, useChatStore } from "@/stores/sessionStore";
-import type { CompareAIAnalysisResponse, CompareData, SessionDetailResponse } from "@/types";
+import type { CompareAIAnalysisResponse, CompareData, RouteCard, SessionDetailResponse } from "@/types";
 
 const { Text } = Typography;
 
-const deriveDays = (summary: string): number => {
-  const match = summary.match(/(\d{1,2})\s*天/);
-  return match ? Number(match[1]) : 0;
-};
-
-const deriveHighlights = (summary: string): string[] => {
-  const parts = summary
-    .split(/[，。；,;.!?\n]+/)
-    .map((item) => item.trim())
-    .filter((item) => item.length >= 4);
-
-  if (!parts.length) {
-    return ["路线亮点待补充"];
+const normalizeHighlights = (card: RouteCard): string[] => {
+  const tags = Array.isArray(card.highlight_tags) ? card.highlight_tags.filter(Boolean) : [];
+  if (tags.length > 0) {
+    return tags.slice(0, 5);
   }
 
-  return parts.slice(0, 5);
+  return ["路线亮点待补充"];
 };
 
 const dedupeRouteIds = (routeIds: number[]) => {
@@ -289,9 +280,9 @@ export default function ChatPage() {
       name: activeRoute.name,
       tags: activeRoute.tags,
       summary: activeRoute.summary,
-      supplier: "平台精选",
-      days: deriveDays(activeRoute.summary),
-      highlights: deriveHighlights(activeRoute.summary),
+      supplier: activeRoute.supplier || "待确认",
+      days: activeRoute.days ?? 0,
+      highlights: normalizeHighlights(activeRoute),
       price_min: activeRoute.price_min,
       price_max: activeRoute.price_max,
     };
@@ -377,7 +368,7 @@ export default function ChatPage() {
               <Text>先描述你的旅行需求，我会同步推荐路线并在右侧整理方案。</Text>
             </div>
 
-            <MessageList />
+            <MessageList onSend={handleSend} />
 
             {error ? (
               <div className="error-row">
@@ -511,6 +502,13 @@ export default function ChatPage() {
 
           .mobile-workspace {
             display: block;
+            flex-shrink: 0;
+            max-height: 40vh;
+            overflow-y: auto;
+            border-radius: 18px;
+            border: 1px solid #e6ebf2;
+            padding: 8px;
+            background: #f8fafc;
           }
         }
 

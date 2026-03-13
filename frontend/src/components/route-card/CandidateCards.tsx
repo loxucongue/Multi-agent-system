@@ -19,22 +19,19 @@ interface CandidateCardsProps {
   extraSelectedCount?: number;
 }
 
-const deriveDays = (summary: string): number => {
-  const match = summary.match(/(\d{1,2})\s*天/);
-  return match ? Number(match[1]) : 0;
+const getDays = (card: RouteCard): number => {
+  if (typeof card.days === "number" && card.days > 0) {
+    return card.days;
+  }
+  return 0;
 };
 
-const deriveHighlights = (summary: string): string[] => {
-  const parts = summary
-    .split(/[，。；,;.!?\n]+/)
-    .map((item) => item.trim())
-    .filter((item) => item.length >= 4);
-
-  if (!parts.length) {
-    return ["亮点信息待补充"];
+const getHighlights = (card: RouteCard): string[] => {
+  const tags = Array.isArray(card.highlight_tags) ? card.highlight_tags.filter(Boolean) : [];
+  if (tags.length > 0) {
+    return tags.slice(0, 3);
   }
-
-  return parts.slice(0, 3);
+  return ["亮点信息待补充"];
 };
 
 const formatPrice = (card: RouteCard) => {
@@ -82,7 +79,7 @@ export default function CandidateCards({
     return (
       <div className="loading-list">
         {[0, 1, 2].map((item) => (
-          <Card key={item} className="loading-card">
+          <Card key={item} className="candidate-loading-card">
             <Skeleton active paragraph={{ rows: 4 }} />
           </Card>
         ))}
@@ -93,7 +90,7 @@ export default function CandidateCards({
             gap: 12px;
           }
 
-          :global(.loading-card) {
+          :global(.candidate-loading-card) {
             border-radius: 18px;
           }
         `}</style>
@@ -144,8 +141,8 @@ export default function CandidateCards({
       <div className="candidate-list">
         {cards.map((card, index) => {
           const checked = currentSelectedRouteIds.includes(card.id);
-          const days = deriveDays(card.summary);
-          const highlights = deriveHighlights(card.summary);
+          const days = getDays(card);
+          const highlights = getHighlights(card);
 
           return (
             <div key={card.id} className={`candidate-card ${checked ? "checked" : ""}`}>
@@ -178,7 +175,7 @@ export default function CandidateCards({
                   </Title>
                   <div className="tag-row">
                     {card.tags.map((tag) => (
-                      <Tag key={`${card.id}-${tag}`} className="route-tag" icon={<CompassOutlined />}>
+                      <Tag key={`${card.id}-${tag}`} className="candidate-route-tag" icon={<CompassOutlined />}>
                         {tag}
                       </Tag>
                     ))}
@@ -314,7 +311,7 @@ export default function CandidateCards({
           margin-top: 10px;
         }
 
-        :global(.route-tag) {
+        :global(.candidate-route-tag) {
           margin: 0;
           border-radius: 999px;
           color: #475569;

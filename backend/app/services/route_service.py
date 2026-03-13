@@ -21,6 +21,27 @@ from app.utils.logger import get_logger
 _CACHE_TTL = 300  # seconds
 
 
+def _derive_route_days(itinerary_json: object) -> int | None:
+    if isinstance(itinerary_json, list):
+        return len([item for item in itinerary_json if item is not None]) or None
+    if isinstance(itinerary_json, dict):
+        days = itinerary_json.get("days")
+        if isinstance(days, list):
+            return len([item for item in days if item is not None]) or None
+
+        day_like_keys = [key for key in itinerary_json.keys() if isinstance(key, str) and "天" in key]
+        if day_like_keys:
+            return len(day_like_keys)
+    return None
+
+
+def _derive_highlight_tags(highlights: str | None) -> list[str]:
+    if not highlights:
+        return []
+    parts = [item.strip() for item in highlights.replace("。", "；").split("；") if item.strip()]
+    return parts[:3]
+
+
 class RouteService:
     """路线数据查询服务。
 
@@ -174,10 +195,13 @@ class RouteService:
                 RouteCard(
                     id=route.id,
                     name=route.name,
+                    supplier=route.supplier,
                     tags=route.tags,
                     summary=route.summary,
                     doc_url=route.doc_url,
                     sort_weight=route.sort_weight,
+                    days=_derive_route_days(route.itinerary_json),
+                    highlight_tags=_derive_highlight_tags(route.highlights),
                     price_min=price_min,
                     price_max=price_max,
                 )

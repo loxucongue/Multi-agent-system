@@ -380,10 +380,13 @@ class RouteCard(BaseModel):
 
     id: int
     name: str
+    supplier: str
     tags: list
     summary: str
     doc_url: str
     sort_weight: int
+    days: int | None = None
+    highlight_tags: list[str] = Field(default_factory=list)
     price_min: Decimal | None = None
     price_max: Decimal | None = None
     model_config = ConfigDict(from_attributes=True)

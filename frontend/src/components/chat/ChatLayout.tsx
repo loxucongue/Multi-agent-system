@@ -1,7 +1,7 @@
 "use client";
 
 import { CompassOutlined, UserOutlined } from "@ant-design/icons";
-import { Button, Layout } from "antd";
+import { Button, Layout, message } from "antd";
 import type { ReactNode } from "react";
 
 import SessionList from "@/components/chat/SessionList";
@@ -43,7 +43,14 @@ export default function ChatLayout({ children }: ChatLayoutProps) {
           </div>
         </div>
 
-        <Button className="login-button" shape="round" icon={<UserOutlined />}>
+        <Button
+          className="login-button"
+          shape="round"
+          icon={<UserOutlined />}
+          onClick={() => {
+            message.info("登录功能即将上线");
+          }}
+        >
           登录 / 注册
         </Button>
       </Header>

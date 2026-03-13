@@ -177,7 +177,11 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   );
 }
 
-export default function MessageList() {
+interface MessageListProps {
+  onSend: (text: string) => Promise<void> | void;
+}
+
+export default function MessageList({ onSend }: MessageListProps) {
   const { messages, isStreaming, currentStreamText } = useChatStore(
     useShallow((state) => ({
       messages: state.messages,
@@ -240,7 +244,13 @@ export default function MessageList() {
 
           <div className="suggestion-list">
             {EMPTY_SUGGESTIONS.map((item) => (
-              <Button key={item} className="suggestion-chip">
+              <Button
+                key={item}
+                className="suggestion-chip"
+                onClick={() => {
+                  void onSend(item);
+                }}
+              >
                 {item}
               </Button>
             ))}

@@ -519,13 +519,32 @@ def _state_for_prompt(state: GraphState) -> dict[str, Any]:
 
 def _to_route_card(detail: dict[str, Any]) -> dict[str, Any]:
     route_id = _to_int_or_none(detail.get("id") or detail.get("route_id"))
+    itinerary_json = detail.get("itinerary_json")
+    days: int | None = None
+    if isinstance(itinerary_json, list):
+        days = len([item for item in itinerary_json if item is not None]) or None
+    elif isinstance(itinerary_json, dict):
+        itinerary_days = itinerary_json.get("days")
+        if isinstance(itinerary_days, list):
+            days = len([item for item in itinerary_days if item is not None]) or None
+        else:
+            day_like_keys = [key for key in itinerary_json.keys() if isinstance(key, str) and "天" in key]
+            if day_like_keys:
+                days = len(day_like_keys)
+
+    highlight_text = str(detail.get("highlights") or "")
+    highlight_tags = [item.strip() for item in highlight_text.replace("。", "；").split("；") if item.strip()][:3]
+
     return {
         "id": route_id,
         "route_id": route_id,
         "name": str(detail.get("name") or ""),
+        "supplier": str(detail.get("supplier") or ""),
         "summary": str(detail.get("summary") or ""),
         "tags": detail.get("tags") if isinstance(detail.get("tags"), list) else [],
         "doc_url": detail.get("doc_url"),
+        "days": days,
+        "highlight_tags": highlight_tags,
         "highlights": str(detail.get("highlights") or ""),
         "features": str(detail.get("features") or ""),
     }

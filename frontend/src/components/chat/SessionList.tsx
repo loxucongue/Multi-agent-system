@@ -5,7 +5,12 @@ import { Button, Empty, Skeleton, Typography } from "antd";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
-import { SESSION_HISTORY_KEY, type SessionHistoryItem, useChatStore } from "@/stores/sessionStore";
+import {
+  SESSION_HISTORY_CHANGED_EVENT,
+  SESSION_HISTORY_KEY,
+  type SessionHistoryItem,
+  useChatStore,
+} from "@/stores/sessionStore";
 
 const { Text, Title } = Typography;
 
@@ -70,8 +75,16 @@ export default function SessionList() {
       }
     };
 
+    const onHistoryChanged = () => {
+      refresh();
+    };
+
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    window.addEventListener(SESSION_HISTORY_CHANGED_EVENT, onHistoryChanged);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(SESSION_HISTORY_CHANGED_EVENT, onHistoryChanged);
+    };
   }, [refresh]);
 
   const groupedSessions = useMemo(

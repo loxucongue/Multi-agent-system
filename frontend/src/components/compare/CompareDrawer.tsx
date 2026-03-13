@@ -3,7 +3,7 @@
 import { CloseOutlined, RobotOutlined, SwapOutlined } from "@ant-design/icons";
 import { Button, Empty, Space, Tag, Typography } from "antd";
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { useSSE } from "@/hooks/useSSE";
@@ -28,6 +28,14 @@ interface RowDef {
 
 const formatPrice = (item: CompareRouteItem) =>
   `¥${item.price_range.min} - ¥${item.price_range.max} ${item.price_range.currency}`.trim();
+
+const formatInterestLabel = (name: string): string => {
+  const normalized = name.trim();
+  if (normalized.length <= 8) {
+    return `深入了解 ${normalized}`;
+  }
+  return `深入了解 ${normalized.slice(0, 8)}...`;
+};
 
 const rowDefs: RowDef[] = [
   { key: "days", label: "行程天数", render: (item) => <Text>{item.days} 天</Text> },
@@ -85,6 +93,7 @@ const rowDefs: RowDef[] = [
 
 export default function CompareDrawer({ open, data, onClose, onAICompare, aiCompareLoading = false }: CompareDrawerProps) {
   const [pendingRouteId, setPendingRouteId] = useState<number | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
   const { connect } = useSSE();
   const { sendMessage, isStreaming } = useChatStore(
     useShallow((state) => ({
@@ -94,6 +103,57 @@ export default function CompareDrawer({ open, data, onClose, onAICompare, aiComp
   );
 
   const routes = useMemo(() => data?.routes ?? [], [data?.routes]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const shell = shellRef.current;
+    const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    shell?.focus();
+
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (!open) {
+        return;
+      }
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const focusable = shell?.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable || focusable.length === 0) {
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeydown);
+    return () => {
+      window.removeEventListener("keydown", handleKeydown);
+      previousActive?.focus();
+    };
+  }, [onClose, open]);
 
   const handleInterest = async (item: CompareRouteItem) => {
     if (isStreaming || pendingRouteId !== null) {
@@ -105,6 +165,7 @@ export default function CompareDrawer({ open, data, onClose, onAICompare, aiComp
       const runId = await sendMessage(`我对 ${item.name} 更感兴趣，请继续介绍这条路线并给出报名建议。`);
       if (runId) {
         connect(runId);
+        onClose();
       }
     } finally {
       setPendingRouteId(null);
@@ -116,12 +177,12 @@ export default function CompareDrawer({ open, data, onClose, onAICompare, aiComp
   }
 
   return (
-    <div role="dialog" aria-modal="true" onClick={onClose} className="compare-mask">
-      <div onClick={(event) => event.stopPropagation()} className="compare-shell">
+    <div role="dialog" aria-modal="true" aria-labelledby="compare-drawer-title" onClick={onClose} className="compare-mask">
+      <div ref={shellRef} tabIndex={-1} onClick={(event) => event.stopPropagation()} className="compare-shell">
         <div className="compare-header">
           <div>
             <Text type="secondary">路线对比</Text>
-            <Title level={4} style={{ margin: "4px 0 0" }}>
+            <Title id="compare-drawer-title" level={4} style={{ margin: "4px 0 0" }}>
               同屏比较不同路线的价格、亮点和适配人群
             </Title>
           </div>
@@ -200,8 +261,10 @@ export default function CompareDrawer({ open, data, onClose, onAICompare, aiComp
                   void handleInterest(item);
                 }}
                 style={{ borderRadius: 12 }}
+                className="compare-interest-btn"
+                title={`深入了解 ${item.name}`}
               >
-                深入了解 {item.name}
+                {formatInterestLabel(item.name)}
               </Button>
             ))}
           </Space>
@@ -311,6 +374,20 @@ export default function CompareDrawer({ open, data, onClose, onAICompare, aiComp
           width: 148px;
           color: #64748b;
           font-weight: 600;
+        }
+
+        :global(.compare-interest-btn) {
+          max-width: 220px;
+        }
+
+        :global(.compare-interest-btn .ant-btn-icon + span),
+        :global(.compare-interest-btn > span:last-child) {
+          display: inline-block;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          max-width: 150px;
+          vertical-align: bottom;
         }
 
         @media (max-width: 768px) {

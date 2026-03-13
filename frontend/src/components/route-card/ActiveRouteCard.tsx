@@ -80,7 +80,7 @@ export default function ActiveRouteCard({
             <StarFilled />
             主推路线
           </span>
-          <Tag bordered={false} className="supplier-tag">
+          <Tag bordered={false} className="active-supplier-tag">
             {route.supplier}
           </Tag>
         </div>
@@ -111,8 +111,8 @@ export default function ActiveRouteCard({
 
       <div className="metric-grid">
         <MetricCard label="主题偏好" value={route.tags[0] ?? "灵活匹配"} />
-        <MetricCard label="路线状态" value="可继续咨询" />
-        <MetricCard label="适合阶段" value={route.days > 0 ? `${route.days} 天内` : "待确认"} />
+        <MetricCard label="供应商" value={route.supplier || "待确认"} />
+        <MetricCard label="行程天数" value={route.days > 0 ? `${route.days} 天` : "待确认"} />
       </div>
 
       <div className="section">
@@ -131,7 +131,7 @@ export default function ActiveRouteCard({
 
       <div className="tag-row">
         {route.tags.map((tag) => (
-          <Tag key={tag} className="route-tag">
+          <Tag key={tag} className="active-route-tag">
             {tag}
           </Tag>
         ))}
@@ -186,7 +186,7 @@ export default function ActiveRouteCard({
           font-weight: 600;
         }
 
-        :global(.supplier-tag) {
+        :global(.active-supplier-tag) {
           margin: 0;
           padding: 4px 10px;
           border-radius: 999px;
@@ -261,7 +261,7 @@ export default function ActiveRouteCard({
           flex-wrap: wrap;
         }
 
-        :global(.route-tag) {
+        :global(.active-route-tag) {
           margin: 0;
           border-radius: 999px;
           color: #475569;
