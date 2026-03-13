@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     COZE_WF_EXTERNAL_INFO_ID: str = ""
     COZE_WF_ROUTE_PARSE_ID: str = ""
     COZE_PARSE_CONCURRENCY: int = 10
+    COZE_PARSE_TIMEOUT: float = 90.0
     COZE_SPACE_ID: str = ""
     COZE_ROUTE_DATASET_ID: str = ""
     COZE_VISA_DATASET_ID: str = ""

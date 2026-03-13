@@ -104,7 +104,9 @@ def extract_profile_destinations(state: dict[str, Any]) -> list[str]:
     return deduped
 
 
-_DEST_PATTERN = re.compile(r"(?:去|到|想去)\s*([\u4e00-\u9fa5A-Za-z]{2,12})")
+_DEST_PATTERN = re.compile(
+    r"(?:想去|去|到|飞)\s*([\u4e00-\u9fa5A-Za-z]{2,12}?)(?:玩|游|旅[游行]|看看|转转|一下|一趟|吧|呢|啊|吗|了|走走|逛逛|$)"
+)
 
 
 def extract_destinations_from_text(text: str) -> list[str]:
@@ -122,4 +124,3 @@ def extract_destinations_from_text(text: str) -> list[str]:
             seen.add(lower)
             deduped.append(lower)
     return deduped
-

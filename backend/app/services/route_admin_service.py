@@ -45,6 +45,7 @@ class RouteAdminService:
         self._settings = settings
         self._logger = get_logger(__name__)
         self._semaphore = asyncio.Semaphore(settings.COZE_PARSE_CONCURRENCY)
+        self._parse_tasks: set[asyncio.Task] = set()
 
     # ---------------------------------------------
     # Public methods
@@ -118,10 +119,16 @@ class RouteAdminService:
                     raise ValueError(f"文档链接已存在: {req.doc_url}") from exc
                 raise
         # Trigger async document parsing
-        if self._workflow and self._settings.COZE_WF_ROUTE_PARSE_ID:
+        parse_triggered = False
+        if self._workflow and self._settings.COZE_WF_ROUTE_PARSE_ID and req.doc_url:
             self._safe_create_parse_task(route_id, req.doc_url)
+            parse_triggered = True
 
-        return RouteCreateResponse(route_id=route_id, name=req.name, parse_status="pending")
+        return RouteCreateResponse(
+            route_id=route_id,
+            name=req.name,
+            parse_status="pending" if parse_triggered else "skipped",
+        )
 
     async def parse_excel(self, file_bytes: bytes, filename: str) -> list[BatchRoutePreviewRow]:
         """Parse Excel file and return preview rows."""
@@ -306,6 +313,8 @@ class RouteAdminService:
             self._call_parse_and_update(route_id, doc_url),
             name=f"parse_route_{route_id}",
         )
+        self._parse_tasks.add(task)
+        task.add_done_callback(self._parse_tasks.discard)
         task.add_done_callback(self._on_parse_task_done)
 
     def _on_parse_task_done(self, task: asyncio.Task[Any]) -> None:
@@ -321,6 +330,19 @@ class RouteAdminService:
 
     async def _call_parse_and_update(self, route_id: int, doc_url: str) -> None:
         """Call Coze parse workflow and write result back to database."""
+
+        # BUG-4: Skip if already parsing (race condition guard)
+        if self._redis:
+            key = f"{_PARSE_KEY_PREFIX}{route_id}"
+            raw = await self._redis.get(key)
+            if raw:
+                try:
+                    status_data = json.loads(raw)
+                    if status_data.get("status") == "parsing":
+                        self._logger.info("skip parse route_id=%d: already parsing", route_id)
+                        return
+                except json.JSONDecodeError:
+                    pass
 
         trace_id = str(uuid.uuid4())
         await self._set_parse_status(route_id, "parsing", "\u5de5\u4f5c\u6d41\u6267\u884c\u4e2d")
@@ -354,8 +376,13 @@ class RouteAdminService:
 
         async with self._session_factory() as session:
             stmt = update(Route).where(Route.id == route_id).values(**values)
-            await session.execute(stmt)
+            exec_result = await session.execute(stmt)
             await session.commit()
+            if exec_result.rowcount == 0:
+                self._logger.warning(
+                    "route_id=%d not found during parse result apply, may have been deleted",
+                    route_id,
+                )
 
     async def _set_parse_status(self, route_id: int, status: str, message: str) -> None:
         """Set parse status in Redis with TTL."""

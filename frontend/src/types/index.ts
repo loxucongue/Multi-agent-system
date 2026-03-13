@@ -175,3 +175,73 @@ export interface AdminLoginResponse {
   access_token: string;
   token_type: string;
 }
+
+// ─── 线路管理（Admin Routes）──────────────────
+
+/** 线路列表项（含 pricing 摘要） */
+export interface RouteListItem extends RouteDetail {
+  pricing: PricingInfo | null;
+}
+
+/** 线路列表分页响应 */
+export interface RouteListResponse {
+  routes: RouteListItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+/** 创建线路请求 */
+export interface RouteCreateRequest {
+  name: string;
+  supplier: string;
+  summary?: string;
+  doc_url: string;
+  price_min?: number | null;
+  price_max?: number | null;
+  currency?: string;
+  schedules_json?: unknown;
+  features?: string | null;
+  is_hot?: boolean;
+  sort_weight?: number;
+}
+
+/** 创建线路响应 */
+export interface RouteCreateResponse {
+  route_id: number;
+  name: string;
+  parse_status: string;
+}
+
+/** 更新线路请求（所有字段可选） */
+export interface RouteUpdateRequest {
+  name?: string;
+  supplier?: string;
+  summary?: string;
+  doc_url?: string;
+  features?: string | null;
+  is_hot?: boolean;
+  sort_weight?: number;
+  tags?: string[];
+  highlights?: string;
+  base_info?: string;
+  itinerary_json?: unknown;
+  notice?: string;
+  included?: string;
+  cost_excluded?: string;
+  age_limit?: string;
+  certificate_limit?: string;
+}
+
+/** 解析状态响应 */
+export interface ParseStatusResponse {
+  route_id: number;
+  status: "parsing" | "done" | "failed" | "no_record" | "unknown";
+  message?: string;
+}
+
+/** 重新解析响应 */
+export interface ReparseResponse {
+  accepted: number[];
+  skipped: Array<{ route_id: number; reason: string }>;
+}

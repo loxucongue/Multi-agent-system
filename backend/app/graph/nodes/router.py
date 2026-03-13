@@ -140,7 +140,7 @@ def _stage1_fast_rules(user_message: str) -> tuple[str | None, float, str | None
 # ─────────────────────────────────────────────
 
 _DESTINATION_PATTERN = re.compile(
-    r"(想去|去|到|飞|玩)\s*([\u4e00-\u9fa5A-Za-z]{2,12})"
+    r"(?:想去|去|到|飞)\s*([\u4e00-\u9fa5A-Za-z]{2,12}?)(?:玩|游|旅[游行]|看看|转转|一下|一趟|吧|呢|啊|吗|了|走走|逛逛|$)"
 )
 _DAYS_PATTERN = re.compile(r"\d+\s*(天|日|晚)")
 _BUDGET_PATTERN = re.compile(r"\d+\s*(万|w|k|元|块|千)", re.IGNORECASE)
@@ -432,7 +432,7 @@ def _extract_entities_by_rules(user_message: str) -> dict[str, Any]:
 
     dest_matches = _DESTINATION_PATTERN.findall(user_message)
     if dest_matches:
-        destinations = list(dict.fromkeys(m[1].strip() for m in dest_matches if m[1].strip()))
+        destinations = list(dict.fromkeys(m.strip() for m in dest_matches if m.strip()))
         if destinations:
             entities["destinations"] = destinations
 

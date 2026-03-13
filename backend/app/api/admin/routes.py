@@ -203,7 +203,7 @@ async def upsert_route_schedule(route_id: int, req: ScheduleUpdateRequest) -> Sc
 
     if services.redis is not None:
         try:
-            await services.redis.delete(f"route_price:{route_id}")
+            await services.redis.delete(f"route_schedule:{route_id}")
         except Exception:
             pass
 

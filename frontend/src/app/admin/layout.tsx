@@ -3,6 +3,7 @@
 import {
   ApiOutlined,
   AppstoreOutlined,
+  CompassOutlined,
   DatabaseOutlined,
   FileSearchOutlined,
   LogoutOutlined,
@@ -20,6 +21,7 @@ const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 
 const MENU_ITEMS: MenuProps["items"] = [
+  { key: "/admin/routes", icon: <CompassOutlined />, label: "线路管理" },
   { key: "/admin/prompts", icon: <AppstoreOutlined />, label: "Prompt管理" },
   { key: "/admin/kb", icon: <DatabaseOutlined />, label: "知识库管理" },
   { key: "/admin/logs", icon: <FileSearchOutlined />, label: "日志查看" },
@@ -63,6 +65,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [hydrated, isLoginPage, router, token]);
 
   const selectedKeys = useMemo(() => {
+    if (pathname.startsWith("/admin/routes")) {
+      return ["/admin/routes"];
+    }
     if (pathname.startsWith("/admin/prompts")) {
       return ["/admin/prompts"];
     }

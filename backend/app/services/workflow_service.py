@@ -102,7 +102,7 @@ class WorkflowService:
             workflow_id=self._settings.COZE_WF_ROUTE_PARSE_ID,
             parameters={"input": doc_url},
             trace_id=trace_id,
-            timeout=90.0,
+            timeout=self._settings.COZE_PARSE_TIMEOUT,
         )
 
         return self._parse_route_parse_result(payload, trace_id=trace_id)
@@ -320,9 +320,10 @@ class WorkflowService:
             if file_url_id.lower().startswith(("http://", "https://")):
                 return file_url_id
 
-        file_url_match = re.search(r"file_url_id[：:]\s*(https?://[^\s\"']+)", output_text)
+        file_url_match = re.search(r"file_url_id[：:]\s*(https?://[^\s\"'\n，。；）\)]+)", output_text)
         if file_url_match:
-            return file_url_match.group(1).strip()
+            url = file_url_match.group(1).strip().rstrip(".,;，。；、)")
+            return url
 
         unique_numeric_tokens = re.findall(r"(?<!\d)(\d{3,})(?!\d)", output_text)
         unique_numeric_token_set = {token for token in unique_numeric_tokens if token}
@@ -426,7 +427,7 @@ class WorkflowService:
             basic_info=self._normalize_text_block(inner.get("basic_info")),
             highlights=self._normalize_text_block(inner.get("highlights")),
             index_tags=tags,
-            itinerary_days=inner.get("itinerary_days"),
+            itinerary_days=self._normalize_itinerary_days(inner.get("itinerary_days")),
             notices=self._normalize_text_block(inner.get("notices")),
             cost_included=self._normalize_text_block(inner.get("cost_included")),
             cost_excluded=self._normalize_text_block(inner.get("cost_excluded")),
@@ -450,6 +451,26 @@ class WorkflowService:
             except TypeError:
                 return str(value).strip()
         return str(value).strip()
+
+    def _normalize_itinerary_days(self, value: Any) -> list[dict]:
+        """Ensure itinerary_days is always a list of dicts."""
+
+        if value is None:
+            return []
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return []
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, list):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+            return []
+        if isinstance(value, list):
+            return value
+        return []
 
     def _normalize_index_tags(self, value: Any) -> list[str]:
         """Normalize index_tags from list or JSON string to string list."""

@@ -211,7 +211,9 @@ class SessionService:
         return SessionState.model_validate(payload)
 
     def _is_expired(self, expires_at: datetime) -> bool:
-        return expires_at <= datetime.now(timezone.utc).replace(tzinfo=None)
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        return expires_at <= datetime.now(timezone.utc)
 
     def _deep_merge_dict(self, base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
         merged = dict(base)
