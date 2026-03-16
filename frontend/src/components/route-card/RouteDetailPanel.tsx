@@ -28,27 +28,14 @@ interface RouteDetailPanelProps {
 
 interface DayPlanItem {
   title: string;
+  subtitle?: string;
   content: string;
+  meals?: string[];
+  hotel?: string;
 }
 
-const toText = (value: unknown): string => String(value ?? "").trim();
-
-const splitTokens = (value: unknown, max = 10): string[] => {
-  const text = toText(value);
-  if (!text) {
-    return [];
-  }
-
-  const tokens = text
-    .split(/[，、；;|/\n]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  return Array.from(new Set(tokens)).slice(0, max);
-};
-
-const flattenToText = (value: unknown, depth = 0): string => {
-  if (depth > 2 || value == null) {
+const formatPlainText = (value: unknown, depth = 0): string => {
+  if (value == null || depth > 4) {
     return "";
   }
   if (typeof value === "string") {
@@ -59,93 +46,67 @@ const flattenToText = (value: unknown, depth = 0): string => {
   }
   if (Array.isArray(value)) {
     return value
-      .map((item) => flattenToText(item, depth + 1))
+      .map((item) => formatPlainText(item, depth + 1))
       .filter(Boolean)
       .join("，");
   }
   if (typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return Object.entries(record)
-      .filter(([key]) => !/(^day$|^title$|^date$|^index$)/i.test(key))
-      .map(([, nested]) => flattenToText(nested, depth + 1))
+    return Object.values(value as Record<string, unknown>)
+      .map((item) => formatPlainText(item, depth + 1))
       .filter(Boolean)
       .join("，");
   }
   return "";
 };
 
-const buildDayContent = (obj: Record<string, unknown>): string => {
-  const direct = toText(
-    obj.content ?? obj.description ?? obj.plan ?? obj.itinerary ?? obj.detail ?? obj.activities ?? obj.activity,
-  );
-  if (direct) {
-    return direct;
+const ensureStringList = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map((item) => formatPlainText(item)).filter(Boolean);
   }
-
-  const fromList = flattenToText(obj.spots ?? obj.pois ?? obj.scenes ?? obj.schedule ?? obj.arrangement);
-  if (fromList) {
-    return fromList;
+  const text = formatPlainText(value);
+  if (!text) {
+    return [];
   }
-
-  return flattenToText(obj) || "暂无行程描述";
+  return text
+    .split(/[，、；;|\n]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 };
 
-const toDayPlans = (itinerary: unknown): DayPlanItem[] => {
-  if (typeof itinerary === "object" && itinerary !== null && !Array.isArray(itinerary)) {
-    const dict = itinerary as Record<string, unknown>;
+const toFeatureTags = (features: unknown, tags: string[]): string[] => {
+  const featureTokens = ensureStringList(features).slice(0, 4);
+  const tagTokens = Array.isArray(tags) ? tags.map((item) => item.trim()).filter(Boolean).slice(0, 6) : [];
+  return Array.from(new Set([...featureTokens, ...tagTokens])).slice(0, 8);
+};
 
-    if (Array.isArray(dict.days)) {
-      return dict.days
-        .map((item, index) => {
-          if (typeof item === "string") {
-            return { title: `第 ${index + 1} 天`, content: item.trim() || "暂无行程描述" };
-          }
-          if (typeof item === "object" && item !== null) {
-            const obj = item as Record<string, unknown>;
-            const day = toText(obj.day) || `${index + 1}`;
-            const title = day.includes("天") ? day : `第 ${day} 天`;
-            return { title, content: buildDayContent(obj) };
-          }
-          return null;
-        })
-        .filter((item): item is DayPlanItem => item !== null);
-    }
+const formatDateTime = (value: string | undefined): string => {
+  if (!value) {
+    return "暂无";
+  }
+  return value.replace("T", " ").replace("Z", "").slice(0, 19);
+};
 
-    const keyedDays = Object.entries(dict)
-      .filter(([key]) => /(第?\d+天|day\s*\d+)/i.test(key))
-      .map(([key, value]) => {
-        const dayNumber = key.match(/\d+/)?.[0] ?? "";
-        const title = dayNumber ? `第 ${dayNumber} 天` : key;
-        return { title, content: flattenToText(value) || "暂无行程描述" };
-      });
+const toPriceText = (data: RouteFullDetail | null): string => {
+  if (!data?.pricing) {
+    return "暂无价格信息";
+  }
+  return `¥${data.pricing.price_min} - ¥${data.pricing.price_max} ${data.pricing.currency}`.trim();
+};
 
-    if (keyedDays.length > 0) {
-      return keyedDays;
-    }
+const formatBaseInfo = (value: unknown): string => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return formatPlainText(value) || "待确认";
   }
 
-  if (Array.isArray(itinerary)) {
-    return itinerary
-      .map((item, index) => {
-        if (typeof item === "string") {
-          return { title: `第 ${index + 1} 天`, content: item.trim() || "暂无行程描述" };
-        }
-        if (typeof item === "object" && item !== null) {
-          const obj = item as Record<string, unknown>;
-          const titleRaw = toText(obj.day ?? obj.title ?? `${index + 1}`);
-          const title = titleRaw.includes("天") ? titleRaw : `第 ${titleRaw} 天`;
-          return { title, content: buildDayContent(obj) };
-        }
-        return null;
-      })
-      .filter((item): item is DayPlanItem => item !== null);
-  }
+  const info = value as Record<string, unknown>;
+  const parts = [
+    formatPlainText(info.destination_country),
+    formatPlainText(info.title),
+    typeof info.total_days === "number" ? `${info.total_days}天` : "",
+    typeof info.total_nights === "number" ? `${info.total_nights}晚` : "",
+  ].filter(Boolean);
 
-  if (typeof itinerary === "string" && itinerary.trim()) {
-    return [{ title: "行程概览", content: itinerary.trim() }];
-  }
-
-  return [];
+  return parts.join(" / ") || "待确认";
 };
 
 const toScheduleDates = (value: unknown): string[] => {
@@ -171,7 +132,7 @@ const toScheduleDates = (value: unknown): string[] => {
     }
     if (typeof input === "object" && input !== null) {
       const record = input as Record<string, unknown>;
-      const dateLike = toText(record.date ?? record.depart_date ?? record.departure_date ?? record.start_date);
+      const dateLike = formatPlainText(record.date ?? record.depart_date ?? record.departure_date ?? record.start_date);
       if (dateLike) {
         pushDate(dateLike);
       }
@@ -187,37 +148,89 @@ const toScheduleDates = (value: unknown): string[] => {
   return Array.from(result).slice(0, 6);
 };
 
-const formatDateTime = (value: string | undefined): string => {
-  const text = toText(value);
-  if (!text) {
-    return "暂无";
+const buildPoisSummary = (pois: unknown): string => {
+  if (!Array.isArray(pois)) {
+    return formatPlainText(pois);
   }
-  return text.replace("T", " ").replace("Z", "").slice(0, 19);
+
+  return pois
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return formatPlainText(item);
+      }
+      const poi = item as Record<string, unknown>;
+      const name = formatPlainText(poi.poi_name);
+      const activity = formatPlainText(poi.activity);
+      return [name, activity].filter(Boolean).join("：");
+    })
+    .filter(Boolean)
+    .join("；");
 };
 
-const toHighlights = (value: unknown): string[] => {
-  const text = toText(value);
-  if (!text) {
+const buildMeals = (value: unknown): string[] => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return ensureStringList(value);
+  }
+  const meals = value as Record<string, unknown>;
+  const labels: Array<[string, string]> = [
+    ["早餐", formatPlainText(meals.breakfast)],
+    ["午餐", formatPlainText(meals.lunch)],
+    ["晚餐", formatPlainText(meals.dinner)],
+  ];
+  return labels.filter(([, text]) => text && text !== "无" && text !== "未提及").map(([label, text]) => `${label}：${text}`);
+};
+
+const buildHotel = (value: unknown): string => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return formatPlainText(value);
+  }
+  const hotel = value as Record<string, unknown>;
+  const parts = [formatPlainText(hotel.hotel_name), formatPlainText(hotel.hotel_level)].filter(
+    (item) => item && item !== "未提及",
+  );
+  return parts.join(" / ");
+};
+
+const toDayPlans = (itinerary: unknown): DayPlanItem[] => {
+  if (!Array.isArray(itinerary)) {
     return [];
   }
-  return text
-    .split(/[。；;\n]+/)
-    .map((item) => item.trim())
-    .filter((item) => item.length > 1)
-    .slice(0, 4);
+
+  return itinerary
+    .map<DayPlanItem | null>((item, index) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const day = item as Record<string, unknown>;
+      const dayNumber = formatPlainText(day.day) || `${index + 1}`;
+      const subtitle = formatPlainText(day.day_title);
+      const content = buildPoisSummary(day.pois) || formatPlainText(day.content) || "暂无行程描述";
+      const meals = buildMeals(day.meals);
+      const hotel = buildHotel(day.hotel);
+
+      return {
+        title: `第${dayNumber}天`,
+        subtitle: subtitle || undefined,
+        content,
+        meals,
+        hotel: hotel || undefined,
+      };
+    })
+    .filter((item): item is DayPlanItem => item !== null);
 };
 
-const toFeatureTags = (features: unknown, tags: string[]): string[] => {
-  const featureTokens = splitTokens(features, 6);
-  const tagTokens = Array.isArray(tags) ? tags.map((item) => toText(item)).filter(Boolean).slice(0, 6) : [];
-  return Array.from(new Set([...featureTokens, ...tagTokens])).slice(0, 8);
-};
-
-const toPriceText = (data: RouteFullDetail | null): string => {
-  if (!data?.pricing) {
-    return "暂无价格信息";
+const renderListSection = (items: string[], emptyText: string) => {
+  if (items.length === 0) {
+    return <Paragraph style={{ marginBottom: 0 }}>{emptyText}</Paragraph>;
   }
-  return `¥${data.pricing.price_min} - ¥${data.pricing.price_max} ${data.pricing.currency}`.trim();
+
+  return (
+    <ul className="info-list">
+      {items.map((item, index) => (
+        <li key={`${item}-${index}`}>{item}</li>
+      ))}
+    </ul>
+  );
 };
 
 export default function RouteDetailPanel({ open, data, loading, onClose }: RouteDetailPanelProps) {
@@ -300,12 +313,12 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
     const dayPlans = toDayPlans(route.itinerary_json);
     const scheduleDates = toScheduleDates(schedule?.schedules_json);
     const featureTags = toFeatureTags(route.features, route.tags);
-    const highlights = toHighlights(route.highlights);
-    const includedText = toText(route.included) || "暂无";
-    const excludedText = toText(route.cost_excluded) || "暂无";
-    const noticeText = toText(route.notice) || "暂无";
-    const ageLimit = toText(route.age_limit) || "未限制";
-    const certificateLimit = toText(route.certificate_limit) || "待顾问确认";
+    const highlights = ensureStringList(route.highlights).slice(0, 8);
+    const includedItems = ensureStringList(route.included);
+    const excludedItems = ensureStringList(route.cost_excluded);
+    const noticeItems = ensureStringList(route.notice);
+    const ageLimit = formatPlainText(route.age_limit) || "未限制";
+    const certificateLimit = formatPlainText(route.certificate_limit) || "待确认";
 
     return (
       <div className="panel-content">
@@ -330,7 +343,7 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
               </span>
               <span className="route-chip">
                 <InfoCircleOutlined />
-                行程信息：{toText(route.base_info) || "待确认"}
+                行程信息：{formatBaseInfo(route.base_info)}
               </span>
             </div>
 
@@ -350,7 +363,9 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
               <Text strong style={{ color: "#111827" }}>
                 路线摘要
               </Text>
-              <Paragraph style={{ margin: "8px 0 0", color: "#4b5563" }}>{toText(route.summary) || "暂无摘要"}</Paragraph>
+              <Paragraph style={{ margin: "8px 0 0", color: "#4b5563" }}>
+                {formatPlainText(route.summary) || "暂无摘要"}
+              </Paragraph>
             </div>
           </div>
 
@@ -412,7 +427,22 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
                     <div className="day-index">{index + 1}</div>
                     <div>
                       <Text strong>{item.title}</Text>
+                      {item.subtitle ? (
+                        <Paragraph style={{ margin: "6px 0 0", color: "#111827", fontWeight: 600 }}>
+                          {item.subtitle}
+                        </Paragraph>
+                      ) : null}
                       <Paragraph style={{ margin: "8px 0 0", color: "#4b5563" }}>{item.content}</Paragraph>
+                      {item.meals && item.meals.length > 0 ? (
+                        <div className="day-meta">
+                          <Text type="secondary">餐食：{item.meals.join(" / ")}</Text>
+                        </div>
+                      ) : null}
+                      {item.hotel ? (
+                        <div className="day-meta">
+                          <Text type="secondary">住宿：{item.hotel}</Text>
+                        </div>
+                      ) : null}
                     </div>
                   </article>
                 ))}
@@ -425,30 +455,28 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
               <Title level={5} style={{ marginTop: 0 }}>
                 亮点速览
               </Title>
-              <ul className="highlights-list">
-                {highlights.length > 0 ? highlights.map((item) => <li key={item}>{item}</li>) : <li>暂无亮点信息</li>}
-              </ul>
+              {renderListSection(highlights, "暂无亮点信息")}
             </section>
 
             <section className="detail-box compact-box">
               <Title level={5} style={{ marginTop: 0 }}>
                 <FileProtectOutlined /> 费用包含
               </Title>
-              <Paragraph style={{ marginBottom: 0 }}>{includedText}</Paragraph>
+              {renderListSection(includedItems, "暂无费用包含说明")}
             </section>
 
             <section className="detail-box compact-box">
               <Title level={5} style={{ marginTop: 0 }}>
                 <FireOutlined /> 费用不含
               </Title>
-              <Paragraph style={{ marginBottom: 0 }}>{excludedText}</Paragraph>
+              {renderListSection(excludedItems, "暂无费用不含说明")}
             </section>
 
             <section className="detail-box compact-box">
               <Title level={5} style={{ marginTop: 0 }}>
                 注意事项
               </Title>
-              <Paragraph style={{ marginBottom: 0 }}>{noticeText}</Paragraph>
+              {renderListSection(noticeItems, "暂无注意事项")}
             </section>
           </div>
         </section>
@@ -634,13 +662,17 @@ export default function RouteDetailPanel({ open, data, loading, onClose }: Route
           font-weight: 700;
         }
 
+        .day-meta {
+          margin-top: 6px;
+        }
+
         .right-col {
           display: grid;
           gap: 10px;
           align-content: start;
         }
 
-        .highlights-list {
+        .info-list {
           margin: 0;
           padding-left: 18px;
           display: grid;

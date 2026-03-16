@@ -68,11 +68,12 @@ class RouteAdminService:
             is_hot=req.is_hot,
             sort_weight=req.sort_weight,
             tags=[],
-            highlights="",
-            base_info="",
+            highlights=[],
+            base_info={},
             itinerary_json=[],
-            notice="",
-            included="",
+            notice=[],
+            included=[],
+            cost_excluded=[],
         )
 
         async with self._session_factory() as session:
@@ -442,8 +443,8 @@ class RouteAdminService:
     async def _apply_parse_result(self, route_id: int, result: RouteParseResult) -> None:
         """Apply parse result fields to routes table.
 
-        Only persist fields that the workflow actually produced. Empty strings
-        and empty lists are treated as "no update" so existing route data is
+        Only persist fields that the workflow actually produced. Empty strings,
+        empty lists, and empty dicts are treated as "no update" so existing route data is
         preserved during reparse.
         """
 
@@ -464,6 +465,8 @@ class RouteAdminService:
             if isinstance(value, str) and value.strip():
                 values[column_name] = value
             elif isinstance(value, list) and len(value) > 0:
+                values[column_name] = value
+            elif isinstance(value, dict) and len(value) > 0:
                 values[column_name] = value
 
         if not values:

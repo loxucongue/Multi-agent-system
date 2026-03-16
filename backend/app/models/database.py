@@ -25,15 +25,15 @@ class Route(Base):
     supplier: Mapped[str] = mapped_column(String(100), nullable=False)
     tags: Mapped[Any] = mapped_column(JSON, nullable=False, default=list)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
-    highlights: Mapped[str] = mapped_column(Text, nullable=False)
-    base_info: Mapped[str] = mapped_column(Text, nullable=False)
-    itinerary_json: Mapped[Any] = mapped_column(JSON, nullable=False)
-    notice: Mapped[str] = mapped_column(Text, nullable=False)
-    included: Mapped[str] = mapped_column(Text, nullable=False)
-    features: Mapped[str | None] = mapped_column(Text, nullable=True, comment="线路特色标签文本")
-    cost_excluded: Mapped[str | None] = mapped_column(Text, nullable=True, comment="费用不含说明")
-    age_limit: Mapped[str | None] = mapped_column(Text, nullable=True, comment="年龄限制说明")
-    certificate_limit: Mapped[str | None] = mapped_column(Text, nullable=True, comment="证件要求说明")
+    highlights: Mapped[Any] = mapped_column(JSON, nullable=False, default=list)
+    base_info: Mapped[Any] = mapped_column(JSON, nullable=False, default=dict)
+    itinerary_json: Mapped[Any] = mapped_column(JSON, nullable=False, default=list)
+    notice: Mapped[Any] = mapped_column(JSON, nullable=False, default=list)
+    included: Mapped[Any] = mapped_column(JSON, nullable=False, default=list)
+    features: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Route feature tags text")
+    cost_excluded: Mapped[Any] = mapped_column(JSON, nullable=False, default=list, comment="Cost excluded details")
+    age_limit: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Age limit description")
+    certificate_limit: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Certificate requirements")
     doc_url: Mapped[str] = mapped_column(String(500), nullable=False, unique=True)
     is_hot: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     sort_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
@@ -140,7 +140,10 @@ class PromptVersion(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     traffic_weight: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=100, server_default="100",
+        Integer,
+        nullable=False,
+        default=100,
+        server_default="100",
         comment="A/B test traffic weight 0-100",
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
@@ -193,7 +196,10 @@ class AuditLog(Base):
         Integer, nullable=True, comment="Prompt version used for A/B tracking",
     )
     is_degraded: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0",
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
         comment="Whether this request used degraded/fallback path",
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())

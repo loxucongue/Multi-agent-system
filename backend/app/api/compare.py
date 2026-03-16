@@ -18,6 +18,7 @@ from app.models.schemas import (
     RouteBatchItem,
 )
 from app.services.container import services
+from app.utils.route_content import extract_highlight_tags, flatten_text, infer_route_days, summarize_route_field
 
 router = APIRouter()
 
@@ -150,8 +151,8 @@ def _to_compare_item(item: RouteBatchItem) -> CompareRouteItem:
     days = _infer_days(item.itinerary_json, item.base_info)
     highlights = _infer_highlights(item.highlights, tags)
     itinerary_style = _infer_itinerary_style(tags)
-    included_summary = _truncate_text(item.included, 100)
-    notice_summary = _truncate_text(item.notice, 100)
+    included_summary = summarize_route_field(item.included, 100)
+    notice_summary = summarize_route_field(item.notice, 100)
     next_date = _extract_next_schedule_date(item.schedule.schedules_json if item.schedule else None)
 
     return CompareRouteItem(
@@ -260,13 +261,13 @@ def _build_ai_compare_route_fallback(route_a: RouteBatchItem, route_b: RouteBatc
 
 def _serialize_route_for_ai(item: RouteBatchItem, title: str) -> str:
     tags = "、".join(_to_text_list(item.tags)) or "暂无"
-    highlights = str(item.highlights or "").strip() or "暂无"
+    highlights = "；".join(_infer_highlights(item.highlights, _to_text_list(item.tags))) or "暂无"
     summary = str(item.summary or "").strip() or "暂无"
-    base_info = str(item.base_info or "").strip() or "暂无"
-    included = _truncate_text(item.included, 300) or "暂无"
-    notice = _truncate_text(item.notice, 300) or "暂无"
+    base_info = flatten_text(item.base_info) or "暂无"
+    included = summarize_route_field(item.included, 300) or "暂无"
+    notice = summarize_route_field(item.notice, 300) or "暂无"
     features = str(item.features or "").strip() or "暂无"
-    cost_excluded = _truncate_text(item.cost_excluded, 300) or "暂无"
+    cost_excluded = summarize_route_field(item.cost_excluded, 300) or "暂无"
     age_limit = str(item.age_limit or "").strip() or "暂无"
     certificate_limit = str(item.certificate_limit or "").strip() or "暂无"
     itinerary = _truncate_text(_stringify_json_like(item.itinerary_json), 500) or "暂无"
@@ -322,35 +323,16 @@ def _to_text_list(value: Any) -> list[str]:
     return []
 
 
-def _infer_days(itinerary_json: Any, base_info: str) -> int:
+def _infer_days(itinerary_json: Any, base_info: Any) -> int:
     """Infer route days from itinerary structure or base info text."""
-
-    if isinstance(itinerary_json, list) and itinerary_json:
-        return len(itinerary_json)
-    if isinstance(itinerary_json, dict):
-        days_field = itinerary_json.get("days")
-        if isinstance(days_field, list) and days_field:
-            return len(days_field)
-        if isinstance(days_field, int) and days_field > 0:
-            return days_field
-
-    match = re.search(r"(\d+)\s*天", base_info or "")
-    if match:
-        return int(match.group(1))
-    return 0
+    return infer_route_days(itinerary_json, base_info) or 0
 
 
-def _infer_highlights(raw_highlights: str, tags: list[str]) -> list[str]:
+def _infer_highlights(raw_highlights: Any, tags: list[str]) -> list[str]:
     """Split highlights text first; fallback to tags."""
-
-    if raw_highlights and raw_highlights.strip():
-        parts = [
-            part.strip()
-            for part in re.split(r"[，,；;、\n|]+", raw_highlights)
-            if part.strip()
-        ]
-        if parts:
-            return parts[:3]
+    parts = extract_highlight_tags(raw_highlights, limit=3)
+    if parts:
+        return parts
     return tags[:3]
 
 
@@ -365,13 +347,9 @@ def _infer_itinerary_style(tags: list[str]) -> str:
     return "经典"
 
 
-def _truncate_text(text: str | None, limit: int) -> str:
+def _truncate_text(text: Any, limit: int) -> str:
     """Trim and truncate text to a maximum length."""
-
-    compact = re.sub(r"\s+", " ", str(text or "")).strip()
-    if len(compact) <= limit:
-        return compact
-    return compact[:limit]
+    return summarize_route_field(text, limit)
 
 
 def _extract_next_schedule_date(schedules_json: Any) -> str | None:

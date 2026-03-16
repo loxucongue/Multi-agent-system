@@ -6,28 +6,17 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.models.schemas import RouteCard, RouteFullDetail, SessionCreateResponse, SessionDetailResponse
 from app.services.container import services
+from app.utils.route_content import extract_highlight_tags, infer_route_days
 
 router = APIRouter()
 
 
 def _derive_route_days(itinerary_json: object) -> int | None:
-    if isinstance(itinerary_json, list):
-        return len([item for item in itinerary_json if item is not None]) or None
-    if isinstance(itinerary_json, dict):
-        days = itinerary_json.get("days")
-        if isinstance(days, list):
-            return len([item for item in days if item is not None]) or None
-        day_like_keys = [key for key in itinerary_json.keys() if isinstance(key, str) and "天" in key]
-        if day_like_keys:
-            return len(day_like_keys)
-    return None
+    return infer_route_days(itinerary_json, None)
 
 
-def _derive_highlight_tags(highlights: str | None) -> list[str]:
-    if not highlights:
-        return []
-    parts = [item.strip() for item in highlights.replace("。", "；").split("；") if item.strip()]
-    return parts[:3]
+def _derive_highlight_tags(highlights: object) -> list[str]:
+    return extract_highlight_tags(highlights, limit=3)
 
 
 @router.post("/create", response_model=SessionCreateResponse, status_code=status.HTTP_201_CREATED)

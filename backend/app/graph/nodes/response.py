@@ -14,6 +14,7 @@ from app.prompts.response_generation import build_response_prompt
 from app.services.circuit_breaker import degradation_policy
 from app.services.llm_client import LLMClient
 from app.utils.logger import get_logger
+from app.utils.route_content import extract_highlight_tags, flatten_text, infer_route_days
 
 _LOGGER = get_logger(__name__)
 
@@ -265,7 +266,8 @@ def _template_route_recommend(tool_results: dict[str, Any]) -> str | None:
             continue
         name = str(detail.get("name") or "未命名线路")
         days = detail.get("days") or "?"
-        highlights = str(detail.get("highlights") or detail.get("summary") or "")
+        raw_highlights = detail.get("highlights") or detail.get("summary") or []
+        highlights = "；".join(extract_highlight_tags(raw_highlights, limit=4))
         features = str(detail.get("features") or "")
         tags = detail.get("tags")
         tag_str = "、".join(str(t) for t in tags) if isinstance(tags, list) and tags else ""
@@ -520,20 +522,8 @@ def _state_for_prompt(state: GraphState) -> dict[str, Any]:
 def _to_route_card(detail: dict[str, Any]) -> dict[str, Any]:
     route_id = _to_int_or_none(detail.get("id") or detail.get("route_id"))
     itinerary_json = detail.get("itinerary_json")
-    days: int | None = None
-    if isinstance(itinerary_json, list):
-        days = len([item for item in itinerary_json if item is not None]) or None
-    elif isinstance(itinerary_json, dict):
-        itinerary_days = itinerary_json.get("days")
-        if isinstance(itinerary_days, list):
-            days = len([item for item in itinerary_days if item is not None]) or None
-        else:
-            day_like_keys = [key for key in itinerary_json.keys() if isinstance(key, str) and "天" in key]
-            if day_like_keys:
-                days = len(day_like_keys)
-
-    highlight_text = str(detail.get("highlights") or "")
-    highlight_tags = [item.strip() for item in highlight_text.replace("。", "；").split("；") if item.strip()][:3]
+    days = infer_route_days(itinerary_json, detail.get("base_info"))
+    highlight_tags = extract_highlight_tags(detail.get("highlights"), limit=3)
 
     return {
         "id": route_id,
@@ -545,7 +535,7 @@ def _to_route_card(detail: dict[str, Any]) -> dict[str, Any]:
         "doc_url": detail.get("doc_url"),
         "days": days,
         "highlight_tags": highlight_tags,
-        "highlights": str(detail.get("highlights") or ""),
+        "highlights": detail.get("highlights") if isinstance(detail.get("highlights"), list) else [],
         "features": str(detail.get("features") or ""),
     }
 
@@ -575,7 +565,7 @@ def _route_detail_matches_destinations(detail: dict[str, Any], destinations: lis
     text_parts = [
         str(detail.get("name") or ""),
         str(detail.get("summary") or ""),
-        str(detail.get("base_info") or ""),
+        flatten_text(detail.get("base_info")),
         str(detail.get("features") or ""),
         " ".join(str(tag) for tag in detail.get("tags", []) if str(tag).strip())
         if isinstance(detail.get("tags"), list)

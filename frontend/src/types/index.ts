@@ -41,19 +41,27 @@ export interface RouteCard {
 }
 
 /** 路线详情（完整字段） */
+export interface RouteBasicInfo {
+  destination_country?: string;
+  title?: string;
+  total_days?: number;
+  total_nights?: number;
+  [key: string]: unknown;
+}
+
 export interface RouteDetail {
   id: number;
   name: string;
   supplier: string;
   tags: string[];
   summary: string;
-  highlights: string;
-  base_info: string;
-  itinerary_json: unknown;
-  notice: string;
-  included: string;
+  highlights: string[];
+  base_info: RouteBasicInfo;
+  itinerary_json: Array<Record<string, unknown>>;
+  notice: string[];
+  included: string[];
   features: string | null;
-  cost_excluded: string | null;
+  cost_excluded: string[];
   age_limit: string | null;
   certificate_limit: string | null;
   doc_url: string;
@@ -228,12 +236,12 @@ export interface RouteUpdateRequest {
   is_hot?: boolean;
   sort_weight?: number;
   tags?: string[];
-  highlights?: string;
-  base_info?: string;
-  itinerary_json?: unknown;
-  notice?: string;
-  included?: string;
-  cost_excluded?: string;
+  highlights?: string[];
+  base_info?: RouteBasicInfo;
+  itinerary_json?: Array<Record<string, unknown>>;
+  notice?: string[];
+  included?: string[];
+  cost_excluded?: string[];
   age_limit?: string;
   certificate_limit?: string;
 }
@@ -241,7 +249,7 @@ export interface RouteUpdateRequest {
 /** 解析状态响应 */
 export interface ParseStatusResponse {
   route_id: number;
-  status: "parsing" | "done" | "failed" | "no_record" | "unknown";
+  status: "parsing" | "retrying" | "done" | "failed" | "no_record" | "unknown";
   message?: string;
 }
 

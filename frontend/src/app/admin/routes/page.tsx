@@ -21,12 +21,12 @@ import {
 import type { UploadProps } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
+  DeleteOutlined,
   EditOutlined,
   PlusOutlined,
   ReloadOutlined,
   SyncOutlined,
   UploadOutlined,
-  DeleteOutlined,
 } from "@ant-design/icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -36,6 +36,7 @@ import { useAdminStore } from "@/stores/adminStore";
 import type {
   ParseStatusResponse,
   ReparseResponse,
+  RouteBasicInfo,
   RouteCreateRequest,
   RouteCreateResponse,
   RouteDetail,
@@ -73,11 +74,71 @@ interface BatchCreateResponse {
   failed: { name: string; doc_url: string; error: string }[];
 }
 
+interface RouteEditFormValues {
+  name?: string;
+  supplier?: string;
+  summary?: string;
+  doc_url?: string;
+  features?: string | null;
+  is_hot?: boolean;
+  sort_weight?: number;
+  highlights?: string;
+  base_info?: string;
+  notice?: string;
+  included?: string;
+  cost_excluded?: string;
+  age_limit?: string;
+  certificate_limit?: string;
+}
+
 const formatPrice = (route: RouteListItem) => {
   if (!route.pricing) {
     return "待补充";
   }
   return `¥${route.pricing.price_min} - ¥${route.pricing.price_max}`;
+};
+
+const stringifyStructuredField = (value: unknown, fallback: unknown): string =>
+  JSON.stringify(value ?? fallback, null, 2);
+
+const parseStringArrayField = (raw: string | undefined, label: string): string[] => {
+  const text = raw?.trim() ?? "";
+  if (!text) {
+    return [];
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`${label} 必须是合法的 JSON 数组`);
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error(`${label} 必须是 JSON 数组`);
+  }
+
+  return parsed.map((item) => String(item ?? "").trim()).filter(Boolean);
+};
+
+const parseObjectField = (raw: string | undefined, label: string): RouteBasicInfo => {
+  const text = raw?.trim() ?? "";
+  if (!text) {
+    return {};
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`${label} 必须是合法的 JSON 对象`);
+  }
+
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+    throw new Error(`${label} 必须是 JSON 对象`);
+  }
+
+  return parsed as RouteBasicInfo;
 };
 
 export default function AdminRoutesPage() {
@@ -96,7 +157,7 @@ export default function AdminRoutesPage() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [editingRoute, setEditingRoute] = useState<RouteListItem | null>(null);
-  const [editForm] = Form.useForm<RouteUpdateRequest>();
+  const [editForm] = Form.useForm<RouteEditFormValues>();
   const [editSubmitting, setEditSubmitting] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -156,10 +217,11 @@ export default function AdminRoutesPage() {
 
     const interval = setInterval(async () => {
       const stillParsing = new Set<number>();
+
       for (const routeId of parsingIds) {
         try {
           const status = await authedFetch<ParseStatusResponse>(`/admin/routes/${routeId}/parse-status`);
-          if (status.status === "parsing") {
+          if (status.status === "parsing" || status.status === "retrying") {
             stillParsing.add(routeId);
           } else if (status.status === "done") {
             message.success(`线路 ${routeId} 解析完成`);
@@ -180,44 +242,50 @@ export default function AdminRoutesPage() {
     return () => clearInterval(interval);
   }, [authedFetch, loadRoutes, message, parsingIds]);
 
-  const handleReparse = useCallback(async (routeId: number) => {
-    try {
-      const resp = await authedFetch<ReparseResponse>("/admin/routes/reparse", {
-        method: "POST",
-        body: JSON.stringify({ route_ids: [routeId] }),
-      });
-      if (resp.accepted.includes(routeId)) {
-        message.success("已提交重新解析任务");
-        setParsingIds((prev) => new Set(prev).add(routeId));
-      } else {
-        const skipped = resp.skipped.find((item) => item.route_id === routeId);
-        message.warning(`已跳过：${skipped?.reason ?? "未知原因"}`);
+  const handleReparse = useCallback(
+    async (routeId: number) => {
+      try {
+        const resp = await authedFetch<ReparseResponse>("/admin/routes/reparse", {
+          method: "POST",
+          body: JSON.stringify({ route_ids: [routeId] }),
+        });
+        if (resp.accepted.includes(routeId)) {
+          message.success("已提交重新解析任务");
+          setParsingIds((prev) => new Set(prev).add(routeId));
+        } else {
+          const skipped = resp.skipped.find((item) => item.route_id === routeId);
+          message.warning(`已跳过：${skipped?.reason ?? "未知原因"}`);
+        }
+      } catch (error) {
+        handleAuthError(error);
       }
-    } catch (error) {
-      handleAuthError(error);
-    }
-  }, [authedFetch, handleAuthError, message]);
+    },
+    [authedFetch, handleAuthError, message],
+  );
 
-  const openEdit = useCallback((route: RouteListItem) => {
-    setEditingRoute(route);
-    editForm.setFieldsValue({
-      name: route.name,
-      supplier: route.supplier,
-      summary: route.summary,
-      doc_url: route.doc_url,
-      features: route.features ?? undefined,
-      is_hot: route.is_hot,
-      sort_weight: route.sort_weight,
-      highlights: route.highlights,
-      base_info: route.base_info,
-      notice: route.notice,
-      included: route.included,
-      cost_excluded: route.cost_excluded ?? undefined,
-      age_limit: route.age_limit ?? undefined,
-      certificate_limit: route.certificate_limit ?? undefined,
-    });
-    setEditOpen(true);
-  }, [editForm]);
+  const openEdit = useCallback(
+    (route: RouteListItem) => {
+      setEditingRoute(route);
+      editForm.setFieldsValue({
+        name: route.name,
+        supplier: route.supplier,
+        summary: route.summary,
+        doc_url: route.doc_url,
+        features: route.features ?? undefined,
+        is_hot: route.is_hot,
+        sort_weight: route.sort_weight,
+        highlights: stringifyStructuredField(route.highlights, []),
+        base_info: stringifyStructuredField(route.base_info, {}),
+        notice: stringifyStructuredField(route.notice, []),
+        included: stringifyStructuredField(route.included, []),
+        cost_excluded: stringifyStructuredField(route.cost_excluded, []),
+        age_limit: route.age_limit ?? undefined,
+        certificate_limit: route.certificate_limit ?? undefined,
+      });
+      setEditOpen(true);
+    },
+    [editForm],
+  );
 
   const handleEditSubmit = async () => {
     if (!editingRoute) {
@@ -228,12 +296,22 @@ export default function AdminRoutesPage() {
       const values = await editForm.validateFields();
       setEditSubmitting(true);
 
-      const body: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(values)) {
-        if (value !== undefined) {
-          body[key] = value;
-        }
-      }
+      const body: RouteUpdateRequest = {
+        name: values.name,
+        supplier: values.supplier,
+        summary: values.summary,
+        doc_url: values.doc_url,
+        features: values.features,
+        is_hot: values.is_hot,
+        sort_weight: values.sort_weight,
+        highlights: parseStringArrayField(values.highlights, "亮点"),
+        base_info: parseObjectField(values.base_info, "基本信息"),
+        notice: parseStringArrayField(values.notice, "注意事项"),
+        included: parseStringArrayField(values.included, "费用包含"),
+        cost_excluded: parseStringArrayField(values.cost_excluded, "费用不含"),
+        age_limit: values.age_limit?.trim() || "",
+        certificate_limit: values.certificate_limit?.trim() || "",
+      };
 
       await authedFetch<RouteDetail>(`/admin/routes/${editingRoute.id}`, {
         method: "PUT",
@@ -250,15 +328,18 @@ export default function AdminRoutesPage() {
     }
   };
 
-  const handleDelete = useCallback(async (routeId: number) => {
-    try {
-      await authedFetch(`/admin/routes/${routeId}`, { method: "DELETE" });
-      message.success("线路已删除");
-      void loadRoutes();
-    } catch (error) {
-      handleAuthError(error);
-    }
-  }, [authedFetch, handleAuthError, loadRoutes, message]);
+  const handleDelete = useCallback(
+    async (routeId: number) => {
+      try {
+        await authedFetch(`/admin/routes/${routeId}`, { method: "DELETE" });
+        message.success("线路已删除");
+        void loadRoutes();
+      } catch (error) {
+        handleAuthError(error);
+      }
+    },
+    [authedFetch, handleAuthError, loadRoutes, message],
+  );
 
   const handleCreate = async () => {
     try {
@@ -268,7 +349,7 @@ export default function AdminRoutesPage() {
         method: "POST",
         body: JSON.stringify(values),
       });
-      message.success(`线路「${resp.name}」创建成功`);
+      message.success(`线路“${resp.name}”创建成功`);
       if (resp.parse_status === "pending") {
         setParsingIds((prev) => new Set(prev).add(resp.route_id));
       }
@@ -348,15 +429,15 @@ export default function AdminRoutesPage() {
         title: "ID",
         dataIndex: "id",
         key: "id",
-        width: 70,
+        width: 72,
         sorter: (a, b) => a.id - b.id,
       },
       {
         title: "线路名称",
         dataIndex: "name",
         key: "name",
+        width: 300,
         ellipsis: true,
-        width: 280,
         render: (_, row) => (
           <Space direction="vertical" size={2}>
             <Text strong>{row.name}</Text>
@@ -368,14 +449,14 @@ export default function AdminRoutesPage() {
         title: "供应商",
         dataIndex: "supplier",
         key: "supplier",
-        width: 140,
+        width: 160,
         ellipsis: true,
       },
       {
         title: "价格区间",
         key: "price",
         width: 180,
-        render: (_, row) => <Text className="metric-value">{formatPrice(row)}</Text>,
+        render: (_, row) => <Text>{formatPrice(row)}</Text>,
       },
       {
         title: "状态",
@@ -435,8 +516,8 @@ export default function AdminRoutesPage() {
   const previewColumns: ColumnsType<PreviewRow> = [
     { title: "行号", dataIndex: "row_num", width: 72 },
     { title: "名称", dataIndex: "name", ellipsis: true },
-    { title: "供应商", dataIndex: "supplier", width: 120, ellipsis: true },
-    { title: "文档链接", dataIndex: "doc_url", ellipsis: true, width: 220 },
+    { title: "供应商", dataIndex: "supplier", width: 140, ellipsis: true },
+    { title: "文档链接", dataIndex: "doc_url", width: 260, ellipsis: true },
     {
       title: "校验结果",
       width: 160,
@@ -459,9 +540,11 @@ export default function AdminRoutesPage() {
           <div>
             <Text type="secondary">线路展示管理</Text>
             <Title level={3} style={{ margin: "4px 0 8px" }}>
-              路线内容、解析状态与展示优先级
+              管理解析结果、价格摘要和展示优先级
             </Title>
-            <Text type="secondary">集中管理用户侧会展示的所有线路信息，包括文档解析、价格、摘要与标签。</Text>
+            <Text type="secondary">
+              当前已切换为结构化字段模式，亮点、基本信息、费用说明和注意事项均按 JSON 保存。
+            </Text>
           </div>
 
           <Space wrap>
@@ -504,11 +587,7 @@ export default function AdminRoutesPage() {
         </div>
       </Card>
 
-      <Card
-        title="线路列表"
-        styles={{ body: { paddingTop: 8 } }}
-        style={{ borderRadius: 28, borderColor: "rgba(125, 181, 211, 0.24)" }}
-      >
+      <Card title="线路列表" styles={{ body: { paddingTop: 8 } }} style={{ borderRadius: 28, borderColor: "rgba(125, 181, 211, 0.24)" }}>
         <Table
           rowKey="id"
           columns={columns}
@@ -532,7 +611,7 @@ export default function AdminRoutesPage() {
       <Modal
         title={editingRoute ? `编辑线路：${editingRoute.name}` : "编辑线路"}
         open={editOpen}
-        width={760}
+        width={820}
         onCancel={() => {
           if (!editSubmitting) {
             setEditOpen(false);
@@ -543,7 +622,7 @@ export default function AdminRoutesPage() {
         confirmLoading={editSubmitting}
         destroyOnClose
       >
-        <Form form={editForm} layout="vertical" style={{ maxHeight: "min(66vh, 560px)", overflowY: "auto", paddingRight: 8 }}>
+        <Form form={editForm} layout="vertical" style={{ maxHeight: "min(70vh, 620px)", overflowY: "auto", paddingRight: 8 }}>
           <Tabs
             destroyInactiveTabPane={false}
             items={[
@@ -564,7 +643,7 @@ export default function AdminRoutesPage() {
                     <Form.Item label="文档链接" name="doc_url" rules={[{ required: true, message: "请输入文档链接" }]}>
                       <Input maxLength={500} />
                     </Form.Item>
-                    <Form.Item label="路线特色" name="features">
+                    <Form.Item label="线路特色" name="features">
                       <Input maxLength={500} />
                     </Form.Item>
                     <Space style={{ width: "100%" }} wrap>
@@ -580,23 +659,30 @@ export default function AdminRoutesPage() {
               },
               {
                 key: "parsed",
-                label: "Coze 解析字段",
+                label: "解析字段",
                 children: (
                   <>
-                    <Form.Item label="亮点" name="highlights">
-                      <TextArea rows={3} />
+                    <Text type="secondary" style={{ display: "block", marginBottom: 12 }}>
+                      下列字段已改为结构化 JSON。数组字段请填写 `[]`，对象字段请填写 `{}`。
+                    </Text>
+                    <Form.Item label="亮点（JSON 数组）" name="highlights">
+                      <TextArea rows={6} spellCheck={false} placeholder={`["亮点1", "亮点2"]`} />
                     </Form.Item>
-                    <Form.Item label="基本信息" name="base_info">
-                      <TextArea rows={3} />
+                    <Form.Item label="基本信息（JSON 对象）" name="base_info">
+                      <TextArea
+                        rows={8}
+                        spellCheck={false}
+                        placeholder={`{\n  "destination_country": "中国-山西",\n  "total_days": 5,\n  "total_nights": 4\n}`}
+                      />
                     </Form.Item>
-                    <Form.Item label="注意事项" name="notice">
-                      <TextArea rows={3} />
+                    <Form.Item label="注意事项（JSON 数组）" name="notice">
+                      <TextArea rows={6} spellCheck={false} placeholder={`["注意事项1", "注意事项2"]`} />
                     </Form.Item>
-                    <Form.Item label="费用包含" name="included">
-                      <TextArea rows={3} />
+                    <Form.Item label="费用包含（JSON 数组）" name="included">
+                      <TextArea rows={6} spellCheck={false} placeholder={`["机票", "酒店", "导游"]`} />
                     </Form.Item>
-                    <Form.Item label="费用不含" name="cost_excluded">
-                      <TextArea rows={3} />
+                    <Form.Item label="费用不含（JSON 数组）" name="cost_excluded">
+                      <TextArea rows={6} spellCheck={false} placeholder={`["单房差", "个人消费"]`} />
                     </Form.Item>
                     <Form.Item label="年龄限制" name="age_limit">
                       <Input />
@@ -636,10 +722,10 @@ export default function AdminRoutesPage() {
           <Form.Item label="摘要" name="summary">
             <TextArea rows={2} />
           </Form.Item>
-          <Form.Item label="文档链接（PDF）" name="doc_url" rules={[{ required: true, message: "请输入文档链接" }]}>
+          <Form.Item label="文档链接（PDF/Word）" name="doc_url" rules={[{ required: true, message: "请输入文档链接" }]}>
             <Input maxLength={500} placeholder="https://oss.example.com/route.pdf" />
           </Form.Item>
-          <Form.Item label="路线特色" name="features">
+          <Form.Item label="线路特色" name="features">
             <Input />
           </Form.Item>
           <Space wrap>

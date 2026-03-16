@@ -16,6 +16,7 @@ from app.models.schemas import (
     VisaSearchResult,
 )
 from app.services.coze_client import CozeClient, CozeClientError
+from app.utils.route_content import ensure_dict, ensure_list_of_dicts, ensure_string_list
 from app.utils.logger import get_logger
 
 
@@ -424,16 +425,21 @@ class WorkflowService:
         tags = self._normalize_index_tags(tags_raw)
 
         return RouteParseResult(
-            basic_info=self._normalize_text_block(inner.get("basic_info")),
-            highlights=self._normalize_text_block(inner.get("highlights")),
+            basic_info=self._normalize_basic_info(inner.get("basic_info")),
+            highlights=self._normalize_text_list(inner.get("highlights")),
             index_tags=tags,
             itinerary_days=self._normalize_itinerary_days(inner.get("itinerary_days")),
-            notices=self._normalize_text_block(inner.get("notices")),
-            cost_included=self._normalize_text_block(inner.get("cost_included")),
-            cost_excluded=self._normalize_text_block(inner.get("cost_excluded")),
+            notices=self._normalize_text_list(inner.get("notices")),
+            cost_included=self._normalize_text_list(inner.get("cost_included")),
+            cost_excluded=self._normalize_text_list(inner.get("cost_excluded")),
             age_limit=self._normalize_text_block(inner.get("age_limit")),
             certificate_limit=self._normalize_text_block(inner.get("certificate_limit")),
         )
+
+    def _normalize_basic_info(self, value: Any) -> dict[str, Any]:
+        """Normalize route basic_info into a structured dict."""
+
+        return ensure_dict(value)
 
     def _normalize_text_block(self, value: Any) -> str:
         """Normalize route-parse field value into displayable text."""
@@ -454,23 +460,7 @@ class WorkflowService:
 
     def _normalize_itinerary_days(self, value: Any) -> list[dict]:
         """Ensure itinerary_days is always a list of dicts."""
-
-        if value is None:
-            return []
-        if isinstance(value, str):
-            text = value.strip()
-            if not text:
-                return []
-            try:
-                parsed = json.loads(text)
-                if isinstance(parsed, list):
-                    return parsed
-            except json.JSONDecodeError:
-                pass
-            return []
-        if isinstance(value, list):
-            return value
-        return []
+        return ensure_list_of_dicts(value)
 
     def _normalize_index_tags(self, value: Any) -> list[str]:
         """Normalize index_tags from list or JSON string to string list."""
@@ -501,3 +491,8 @@ class WorkflowService:
             return normalized
 
         return []
+
+    def _normalize_text_list(self, value: Any) -> list[str]:
+        """Normalize workflow outputs into structured string arrays."""
+
+        return ensure_string_list(value)

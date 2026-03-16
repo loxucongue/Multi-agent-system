@@ -61,7 +61,10 @@ class _FakeWorkflow:
         self.calls += 1
         if self.calls <= self.failures_before_success:
             raise RuntimeError(f"transient-{self.calls}")
-        return RouteParseResult(basic_info=f"parsed:{doc_url}:{trace_id}")
+        return RouteParseResult(
+            basic_info={"title": f"parsed:{doc_url}:{trace_id}", "total_days": 5},
+            highlights=["亮点A"],
+        )
 
 
 @pytest.mark.anyio
@@ -75,13 +78,13 @@ async def test_apply_parse_result_skips_empty_fields() -> None:
     )
 
     result = RouteParseResult(
-        basic_info="7-day family route",
-        highlights="Disney + resort hotel",
+        basic_info={"title": "7-day family route", "total_days": 7},
+        highlights=["Disney", "Resort hotel"],
         index_tags=[],
         itinerary_days=[],
-        notices="Book early in peak season",
-        cost_included="Flights and hotels",
-        cost_excluded="Visa and personal expenses",
+        notices=["Book early in peak season"],
+        cost_included=["Flights", "Hotels"],
+        cost_excluded=["Visa", "Personal expenses"],
         age_limit="3+",
         certificate_limit="Passport valid for 6 months",
     )
@@ -92,11 +95,11 @@ async def test_apply_parse_result_skips_empty_fields() -> None:
     assert session.last_stmt is not None
 
     params = session.last_stmt.compile().params
-    assert params["base_info"] == "7-day family route"
-    assert params["highlights"] == "Disney + resort hotel"
-    assert params["notice"] == "Book early in peak season"
-    assert params["included"] == "Flights and hotels"
-    assert params["cost_excluded"] == "Visa and personal expenses"
+    assert params["base_info"] == {"title": "7-day family route", "total_days": 7}
+    assert params["highlights"] == ["Disney", "Resort hotel"]
+    assert params["notice"] == ["Book early in peak season"]
+    assert params["included"] == ["Flights", "Hotels"]
+    assert params["cost_excluded"] == ["Visa", "Personal expenses"]
     assert params["age_limit"] == "3+"
     assert params["certificate_limit"] == "Passport valid for 6 months"
     assert "tags" not in params
@@ -157,7 +160,7 @@ async def test_run_route_parse_with_retry_succeeds_after_transient_failures(monk
     result = await service._run_route_parse_with_retry(route_id=9, doc_url="https://example.com/9.pdf")
 
     assert workflow.calls == 3
-    assert result.basic_info.startswith("parsed:https://example.com/9.pdf:")
+    assert result.basic_info["title"].startswith("parsed:https://example.com/9.pdf:")
     assert [status for status, _ in recorded_statuses] == [
         "parsing",
         "retrying",

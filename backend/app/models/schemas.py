@@ -278,6 +278,10 @@ class LeadListResponse(BaseModel):
     total: int
 
 
+RouteBasicInfo = dict[str, Any]
+RouteTextList = list[str]
+
+
 # ─────────────────────────────────────────────
 #  Route schemas
 # ─────────────────────────────────────────────
@@ -289,15 +293,15 @@ class RouteDetail(BaseModel):
     id: int
     name: str
     supplier: str
-    tags: list
+    tags: RouteTextList
     summary: str
-    highlights: str
-    base_info: str
-    itinerary_json: Any
-    notice: str
-    included: str
+    highlights: RouteTextList
+    base_info: RouteBasicInfo
+    itinerary_json: list[dict[str, Any]]
+    notice: RouteTextList
+    included: RouteTextList
     features: str | None = None
-    cost_excluded: str | None = None
+    cost_excluded: RouteTextList
     age_limit: str | None = None
     certificate_limit: str | None = None
     doc_url: str
@@ -354,15 +358,15 @@ class RouteBatchItem(BaseModel):
     id: int
     name: str
     supplier: str
-    tags: list
+    tags: RouteTextList
     summary: str
-    highlights: str
-    base_info: str
-    itinerary_json: Any
-    notice: str
-    included: str
+    highlights: RouteTextList
+    base_info: RouteBasicInfo
+    itinerary_json: list[dict[str, Any]]
+    notice: RouteTextList
+    included: RouteTextList
     features: str | None = None
-    cost_excluded: str | None = None
+    cost_excluded: RouteTextList
     age_limit: str | None = None
     certificate_limit: str | None = None
     doc_url: str
@@ -381,7 +385,7 @@ class RouteCard(BaseModel):
     id: int
     name: str
     supplier: str
-    tags: list
+    tags: RouteTextList
     summary: str
     doc_url: str
     sort_weight: int
@@ -505,13 +509,13 @@ class AdminLoginResponse(BaseModel):
 class RouteParseResult(BaseModel):
     """Coze 行程解析工作流返回结构。"""
 
-    basic_info: str = ""
-    highlights: str = ""
+    basic_info: RouteBasicInfo = Field(default_factory=dict)
+    highlights: RouteTextList = Field(default_factory=list)
     index_tags: list[str] = Field(default_factory=list)
-    itinerary_days: Any = None
-    notices: str = ""
-    cost_included: str = ""
-    cost_excluded: str = ""
+    itinerary_days: list[dict[str, Any]] = Field(default_factory=list)
+    notices: RouteTextList = Field(default_factory=list)
+    cost_included: RouteTextList = Field(default_factory=list)
+    cost_excluded: RouteTextList = Field(default_factory=list)
     age_limit: str = ""
     certificate_limit: str = ""
 
@@ -542,13 +546,13 @@ class RouteUpdateRequest(BaseModel):
     features: str | None = None
     is_hot: bool | None = None
     sort_weight: int | None = None
-    tags: list | None = None
-    highlights: str | None = None
-    base_info: str | None = None
-    itinerary_json: Any | None = None
-    notice: str | None = None
-    included: str | None = None
-    cost_excluded: str | None = None
+    tags: RouteTextList | None = None
+    highlights: RouteTextList | None = None
+    base_info: RouteBasicInfo | None = None
+    itinerary_json: list[dict[str, Any]] | None = None
+    notice: RouteTextList | None = None
+    included: RouteTextList | None = None
+    cost_excluded: RouteTextList | None = None
     age_limit: str | None = None
     certificate_limit: str | None = None
 

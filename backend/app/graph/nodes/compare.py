@@ -20,6 +20,7 @@ from app.services.llm_client import LLMClient
 from app.services.prompt_defaults import DEFAULT_PROMPTS
 from app.services.prompt_service import get_active_prompt
 from app.utils.logger import get_logger
+from app.utils.route_content import extract_highlight_tags, infer_route_days, summarize_route_field
 
 _LOGGER = get_logger(__name__)
 
@@ -132,7 +133,7 @@ def _resolve_services() -> tuple[Any, LLMClient]:
 async def _build_compare_item(row: Any, llm_client: LLMClient) -> CompareRouteItem:
     tags = _as_text_list(getattr(row, "tags", []))
     itinerary_json = getattr(row, "itinerary_json", None)
-    highlights = _split_highlights(str(getattr(row, "highlights", "") or ""))
+    highlights = _split_highlights(getattr(row, "highlights", []))
 
     itinerary_style = _derive_itinerary_style(tags=tags, itinerary_json=itinerary_json)
     if itinerary_style is None:
@@ -142,9 +143,9 @@ async def _build_compare_item(row: Any, llm_client: LLMClient) -> CompareRouteIt
             highlights=highlights,
         )
 
-    days = _infer_days(itinerary_json=itinerary_json, base_info=str(getattr(row, "base_info", "") or ""))
-    included_summary = _summarize_text(str(getattr(row, "included", "") or ""), 100)
-    notice_summary = _summarize_text(str(getattr(row, "notice", "") or ""), 100)
+    days = _infer_days(itinerary_json=itinerary_json, base_info=getattr(row, "base_info", {}))
+    included_summary = _summarize_text(getattr(row, "included", []), 100)
+    notice_summary = _summarize_text(getattr(row, "notice", []), 100)
 
     pricing = getattr(row, "pricing", None)
     schedule = getattr(row, "schedule", None)
@@ -189,9 +190,12 @@ def _derive_itinerary_style(tags: list[str], itinerary_json: Any) -> str | None:
 
 
 def _avg_spots_per_day(itinerary_json: Any) -> float | None:
-    if not isinstance(itinerary_json, dict):
+    if isinstance(itinerary_json, list):
+        days = itinerary_json
+    elif isinstance(itinerary_json, dict):
+        days = itinerary_json.get("days")
+    else:
         return None
-    days = itinerary_json.get("days")
     if not isinstance(days, list) or not days:
         return None
 
@@ -304,6 +308,18 @@ def _extract_next_schedule_date(schedules_json: Any) -> str | None:
 
 def _is_date_str(value: str) -> bool:
     return bool(re.search(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", value))
+
+
+def _infer_days(itinerary_json: Any, base_info: Any) -> int:
+    return infer_route_days(itinerary_json, base_info) or 0
+
+
+def _split_highlights(raw: Any) -> list[str]:
+    return extract_highlight_tags(raw, limit=3)
+
+
+def _summarize_text(text: Any, limit: int) -> str:
+    return summarize_route_field(text, limit)
 
 
 def _to_float(value: Any) -> float:
