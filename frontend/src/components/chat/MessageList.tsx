@@ -2,9 +2,17 @@
 
 import { LoadingOutlined, RobotOutlined, UserOutlined, WarningOutlined } from "@ant-design/icons";
 import { Button, Empty, Skeleton, Spin, Typography } from "antd";
-import type { HTMLAttributes, LiHTMLAttributes } from "react";
+import type {
+  HTMLAttributes,
+  LiHTMLAttributes,
+  TableHTMLAttributes,
+  TdHTMLAttributes,
+  ThHTMLAttributes,
+  TrHTMLAttributes,
+} from "react";
 import { useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useShallow } from "zustand/react/shallow";
 
 import { useChatStore } from "@/stores/sessionStore";
@@ -18,6 +26,62 @@ const markdownComponents = {
   ul: (props: HTMLAttributes<HTMLUListElement>) => <ul style={{ margin: "0 0 8px 18px" }} {...props} />,
   ol: (props: HTMLAttributes<HTMLOListElement>) => <ol style={{ margin: "0 0 8px 18px" }} {...props} />,
   li: (props: LiHTMLAttributes<HTMLLIElement>) => <li style={{ marginBottom: 4 }} {...props} />,
+  table: (props: TableHTMLAttributes<HTMLTableElement>) => (
+    <div
+      style={{
+        overflowX: "auto",
+        margin: "0 0 16px 0",
+        border: "1px solid #d9e2ec",
+        borderRadius: 14,
+        background: "#ffffff",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.6)",
+      }}
+    >
+      <table
+        style={{
+          width: "100%",
+          minWidth: 760,
+          borderCollapse: "separate",
+          borderSpacing: 0,
+          background: "#ffffff",
+          tableLayout: "fixed",
+        }}
+        {...props}
+      />
+    </div>
+  ),
+  th: (props: ThHTMLAttributes<HTMLTableCellElement>) => (
+    <th
+      style={{
+        padding: "10px 12px",
+        textAlign: "left",
+        fontWeight: 600,
+        fontSize: 13,
+        color: "#334155",
+        background: "#eef4fb",
+        borderBottom: "1px solid #d9e2ec",
+        borderRight: "1px solid #d9e2ec",
+        lineHeight: 1.6,
+      }}
+      {...props}
+    />
+  ),
+  tr: (props: TrHTMLAttributes<HTMLTableRowElement>) => <tr style={{ background: "#ffffff" }} {...props} />,
+  td: (props: TdHTMLAttributes<HTMLTableCellElement>) => (
+    <td
+      style={{
+        padding: "12px 14px",
+        verticalAlign: "top",
+        borderTop: "1px solid #e5eaf1",
+        borderRight: "1px solid #e5eaf1",
+        color: "#1f2937",
+        fontSize: 13,
+        lineHeight: 1.7,
+        background: "#ffffff",
+      }}
+      {...props}
+    />
+  ),
 };
 
 const EMPTY_SUGGESTIONS = [
@@ -114,7 +178,13 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       <div className="bubble-stack">
         <span className="bubble-name">{isUser ? "你" : "旅行顾问"}</span>
         <div className={`bubble ${isUser ? "user" : "assistant"}`}>
-          {isUser ? message.content : <ReactMarkdown components={markdownComponents}>{message.content}</ReactMarkdown>}
+          {isUser ? (
+            message.content
+          ) : (
+            <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]}>
+              {message.content}
+            </ReactMarkdown>
+          )}
         </div>
       </div>
 
@@ -155,8 +225,8 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           padding: 14px 16px;
           border-radius: 18px;
           line-height: 1.8;
-          white-space: pre-wrap;
           word-break: break-word;
+          overflow-wrap: anywhere;
           box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
         }
 
@@ -164,6 +234,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           color: #ffffff;
           background: #2f80ed;
           border-top-right-radius: 8px;
+          white-space: pre-wrap;
         }
 
         .bubble.assistant {
@@ -171,6 +242,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           background: #f4f6f8;
           border: 1px solid #e6ebf2;
           border-top-left-radius: 8px;
+          white-space: normal;
         }
       `}</style>
     </div>
@@ -328,7 +400,9 @@ export default function MessageList({ onSend }: MessageListProps) {
           <div className="bubble-stack">
             <span className="bubble-name">旅行顾问</span>
             <div className="bubble assistant">
-              <ReactMarkdown components={markdownComponents}>{currentStreamText}</ReactMarkdown>
+              <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]}>
+                {currentStreamText}
+              </ReactMarkdown>
               <span className="stream-cursor">{STREAM_CURSOR}</span>
             </div>
           </div>

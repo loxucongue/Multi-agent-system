@@ -23,6 +23,7 @@ from app.models.schemas import (
     RouteParseResult,
 )
 from app.services.config_service import ConfigService
+from app.services.pdf_cover_service import PdfCoverService
 from app.services.workflow_service import WorkflowService
 from app.utils.logger import get_logger
 
@@ -42,12 +43,14 @@ class RouteAdminService:
         redis: aioredis.Redis | None,
         settings: Settings,
         config_service: ConfigService | None = None,
+        pdf_cover_service: PdfCoverService | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._workflow = workflow_service
         self._redis = redis
         self._settings = settings
         self._config_service = config_service
+        self._pdf_cover_service = pdf_cover_service
         self._logger = get_logger(__name__)
         self._semaphore = asyncio.Semaphore(settings.COZE_PARSE_CONCURRENCY)
         self._parse_tasks: set[asyncio.Task] = set()
@@ -353,6 +356,7 @@ class RouteAdminService:
         try:
             result = await self._run_route_parse_with_retry(route_id, doc_url)
             await self._apply_parse_result(route_id, result)
+            await self._try_generate_and_apply_cover(route_id, doc_url)
             await self._set_parse_status(route_id, "done", "\u89e3\u6790\u5b8c\u6210")
             self._logger.info("route parse done route_id=%d", route_id)
 
@@ -503,3 +507,18 @@ class RouteAdminService:
             await self._redis.set(key, data, ex=_PARSE_TTL)
         except Exception:
             self._logger.debug("failed to set parse status for route_id=%d", route_id)
+
+    async def _try_generate_and_apply_cover(self, route_id: int, doc_url: str) -> None:
+        """Generate cover image from route PDF and persist cover_image field."""
+
+        if self._pdf_cover_service is None:
+            return
+
+        cover_image = await self._pdf_cover_service.generate_cover(route_id=route_id, doc_url=doc_url)
+        if not cover_image:
+            return
+
+        async with self._session_factory() as session:
+            stmt = update(Route).where(Route.id == route_id).values(cover_image=cover_image)
+            await session.execute(stmt)
+            await session.commit()

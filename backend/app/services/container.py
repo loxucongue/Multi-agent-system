@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import TypeVar
+from pathlib import Path
 
 from redis import asyncio as aioredis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -18,6 +19,7 @@ from app.services.kb_admin_service import KBAdminService
 from app.services.lead_service import LeadService
 from app.services.llm_client import LLMClient
 from app.services.prompt_service import ensure_prompt_seeds
+from app.services.pdf_cover_service import PdfCoverService
 from app.services.rate_limiter import RateLimiter
 from app.services.route_admin_service import RouteAdminService
 from app.services.route_service import RouteService
@@ -61,6 +63,7 @@ class ServiceContainer:
         self._rate_limiter: RateLimiter | None = None
         self._audit_service: AuditService | None = None
         self._route_admin_service: RouteAdminService | None = None
+        self._pdf_cover_service: PdfCoverService | None = None
 
     async def initialize(self) -> None:
         """Initialize all services and wire shared dependencies once."""
@@ -126,6 +129,7 @@ class ServiceContainer:
                 redis=self._redis,
                 settings=settings,
                 config_service=self._config_service,
+                pdf_cover_service=self._build_pdf_cover_service(),
             )
 
             # Mark initialized before seeding prompts so service properties are accessible.
@@ -174,6 +178,7 @@ class ServiceContainer:
         self._rate_limiter = None
         self._audit_service = None
         self._route_admin_service = None
+        self._pdf_cover_service = None
         self._session_factory = None
         self._redis = None
         self._initialized = False
@@ -235,6 +240,12 @@ class ServiceContainer:
     @property
     def route_admin_service(self) -> RouteAdminService:
         return self._require_initialized("route_admin_service", self._route_admin_service)
+
+    def _build_pdf_cover_service(self) -> PdfCoverService:
+        if self._pdf_cover_service is None:
+            covers_dir = Path(__file__).resolve().parents[2] / "data" / "route-covers"
+            self._pdf_cover_service = PdfCoverService(output_dir=covers_dir)
+        return self._pdf_cover_service
 
     def _require_initialized(self, name: str, value: T | None) -> T:
         if not self._initialized or value is None:

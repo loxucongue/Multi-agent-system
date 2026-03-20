@@ -51,6 +51,7 @@ async def get_session_detail(session_id: str) -> SessionDetailResponse:
                     id=item.id,
                     name=item.name,
                     supplier=item.supplier,
+                    cover_image=item.cover_image,
                     tags=item.tags,
                     summary=item.summary,
                     doc_url=item.doc_url,

@@ -293,6 +293,7 @@ class RouteDetail(BaseModel):
     id: int
     name: str
     supplier: str
+    cover_image: str | None = None
     tags: RouteTextList
     summary: str
     highlights: RouteTextList
@@ -358,6 +359,7 @@ class RouteBatchItem(BaseModel):
     id: int
     name: str
     supplier: str
+    cover_image: str | None = None
     tags: RouteTextList
     summary: str
     highlights: RouteTextList
@@ -385,6 +387,7 @@ class RouteCard(BaseModel):
     id: int
     name: str
     supplier: str
+    cover_image: str | None = None
     tags: RouteTextList
     summary: str
     doc_url: str

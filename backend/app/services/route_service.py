@@ -184,6 +184,7 @@ class RouteService:
                     id=route.id,
                     name=route.name,
                     supplier=route.supplier,
+                    cover_image=route.cover_image,
                     tags=route.tags,
                     summary=route.summary,
                     doc_url=route.doc_url,

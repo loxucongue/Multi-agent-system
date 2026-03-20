@@ -572,16 +572,16 @@ export default function AdminRoutesPage() {
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-          <Card bordered={false} style={{ borderRadius: 22, background: "rgba(255,255,255,0.74)" }}>
+          <Card variant="borderless" style={{ borderRadius: 22, background: "rgba(255,255,255,0.74)" }}>
             <Statistic title="缺少文档链接" value={missingDocCount} />
           </Card>
-          <Card bordered={false} style={{ borderRadius: 22, background: "rgba(255,255,255,0.74)" }}>
+          <Card variant="borderless" style={{ borderRadius: 22, background: "rgba(255,255,255,0.74)" }}>
             <Statistic title="热门线路数" value={hotRoutesCount} />
           </Card>
-          <Card bordered={false} style={{ borderRadius: 22, background: "rgba(255,255,255,0.74)" }}>
+          <Card variant="borderless" style={{ borderRadius: 22, background: "rgba(255,255,255,0.74)" }}>
             <Statistic title="解析中的线路" value={parsingCount} />
           </Card>
-          <Card bordered={false} style={{ borderRadius: 22, background: "rgba(255,255,255,0.74)" }}>
+          <Card variant="borderless" style={{ borderRadius: 22, background: "rgba(255,255,255,0.74)" }}>
             <Statistic title="总线路数" value={total} />
           </Card>
         </div>

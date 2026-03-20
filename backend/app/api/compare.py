@@ -24,6 +24,27 @@ router = APIRouter()
 
 _MAX_COMPARE_ROUTES = 5
 _CROWD_KEYWORDS = ("亲子", "老人", "老年", "蜜月", "情侣", "家庭", "学生", "闺蜜", "朋友", "商务")
+_AI_COMPARE_MARKDOWN_SYSTEM_PROMPT = (
+    "你是资深旅游顾问。请仅基于给定的两条路线内容做对比分析，并且只输出纯 Markdown。"
+    "不要输出 JSON、HTML、代码块、前言、结尾客套或任何额外说明。"
+    "请严格按以下结构输出：\n"
+    "## 核心结论\n"
+    "用 2 到 3 句话概括最关键差异。\n\n"
+    "## 差异对比表\n"
+    "必须输出 Markdown 表格，至少覆盖：行程节奏、核心亮点、费用包含、费用不含/风险、适合人群、价格区间/预算友好度。\n"
+    "表格每个单元格只允许写 1 句短语，尽量控制在 18 个汉字以内。"
+    "不要在单元格里写多句解释或大段正文，详细说明统一写到表格下方的小节。\n\n"
+    "## 优缺点对比\n"
+    "### 路线A\n"
+    "- ...\n"
+    "### 路线B\n"
+    "- ...\n\n"
+    "## 适合人群建议\n"
+    "- ...\n\n"
+    "## 预算有限怎么选\n"
+    "- ...\n\n"
+    "标题之间只保留一个空行，不要输出多余空行，不要编造不存在的数据。"
+)
 
 
 @router.post("/{session_id}/compare", response_model=CompareData)
@@ -119,20 +140,14 @@ async def compare_routes_ai_analysis(
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "你是资深旅游顾问。请仅基于给定的两条路线内容做对比分析，输出中文结论："
-                        "1) 核心差异（行程节奏/亮点/费用风险）；"
-                        "2) 各自优缺点；"
-                        "3) 分人群推荐建议（亲子/老人/首次出境/预算敏感）。"
-                        "不要编造不存在的数据。"
-                    ),
+                    "content": _AI_COMPARE_MARKDOWN_SYSTEM_PROMPT,
                 },
                 {"role": "user", "content": prompt},
             ],
             temperature=0.3,
             max_tokens=900,
         )
-        normalized = str(analysis or "").strip()
+        normalized = _normalize_markdown_analysis(str(analysis or ""))
         return CompareAIAnalysisResponse(analysis=normalized or fallback_text)
     except Exception:
         return CompareAIAnalysisResponse(analysis=fallback_text)
@@ -239,11 +254,12 @@ def _build_ai_compare_route_prompt(route_a: RouteBatchItem, route_b: RouteBatchI
             "请对比以下两条路线：",
             _serialize_route_for_ai(route_a, "路线A"),
             _serialize_route_for_ai(route_b, "路线B"),
-            "请按以下结构输出：",
-            "一、核心差异",
-            "二、优缺点对比",
-            "三、适合人群建议",
-            "四、若用户预算有限该选哪条",
+            "请只输出纯 Markdown，不要输出 JSON、HTML 或代码块。",
+            "请使用 Markdown 二级标题与列表。",
+            "请输出一张 Markdown 表格，至少覆盖：行程节奏、核心亮点、费用包含、费用不含/风险、适合人群、价格区间/预算友好度。",
+            "表格每个单元格只写一句短语，尽量控制在 18 个汉字以内。",
+            "详细解释不要放进表格，统一写到表格后面的列表里。",
+            "若信息缺失，请明确写“未提及”或“待确认”，不要编造。",
         ]
     )
 
@@ -252,10 +268,15 @@ def _build_ai_compare_route_fallback(route_a: RouteBatchItem, route_b: RouteBatc
     price_a = _format_price_range(route_a)
     price_b = _format_price_range(route_b)
     return (
-        f"已对比两条路线：{route_a.name} 与 {route_b.name}。\n"
-        f"- {route_a.name} 价格区间：{price_a}\n"
-        f"- {route_b.name} 价格区间：{price_b}\n"
-        "建议优先比较：行程节奏、费用包含范围、注意事项风险，再结合您的预算和出行人群选择。"
+        "## 核心结论\n\n"
+        f"已完成两条路线的基础对比：**{route_a.name}** 与 **{route_b.name}**。\n\n"
+        "## 差异对比表\n\n"
+        "| 维度 | 路线A | 路线B | 建议 |\n"
+        "| --- | --- | --- | --- |\n"
+        f"| 价格区间 | {price_a} | {price_b} | 预算敏感用户优先关注总价与费用不含项 |\n\n"
+        "## 适合人群建议\n\n"
+        "- 建议优先比较行程节奏、费用包含范围和注意事项风险。\n"
+        "- 如果你告诉我预算、出行人群和节奏偏好，我可以继续给出更明确推荐。"
     )
 
 
@@ -296,6 +317,16 @@ def _format_price_range(item: RouteBatchItem) -> str:
     if pricing is None:
         return "暂无"
     return f"{pricing.price_min}~{pricing.price_max} {pricing.currency}"
+
+
+def _normalize_markdown_analysis(text: str) -> str:
+    """Normalize AI markdown text for stable chat rendering."""
+
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    normalized = re.sub(r"[ \t]+\n", "\n", normalized)
+    normalized = re.sub(r"\n[ \t]+\n", "\n\n", normalized)
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+    return normalized
 
 
 def _stringify_json_like(value: Any) -> str:

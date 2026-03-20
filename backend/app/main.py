@@ -1,11 +1,13 @@
 """FastAPI application entrypoint."""
 
 import uuid
+from pathlib import Path
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.responses import JSONResponse, Response
 
 from app.api.admin.auth import router as admin_auth_router
@@ -42,6 +44,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Travel Advisor Backend", lifespan=lifespan)
+
+static_dir = Path(__file__).resolve().parents[1] / "data"
+static_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 app.include_router(chat_router, prefix="/chat", tags=["chat"])
 app.include_router(session_router, prefix="/session", tags=["session"])

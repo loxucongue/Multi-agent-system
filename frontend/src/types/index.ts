@@ -53,6 +53,7 @@ export interface RouteDetail {
   id: number;
   name: string;
   supplier: string;
+  cover_image?: string | null;
   tags: string[];
   summary: string;
   highlights: string[];

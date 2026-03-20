@@ -25,6 +25,7 @@ class Route(Base):
     supplier: Mapped[str] = mapped_column(String(100), nullable=False)
     tags: Mapped[Any] = mapped_column(JSON, nullable=False, default=list)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
+    cover_image: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="Route cover image URL")
     highlights: Mapped[Any] = mapped_column(JSON, nullable=False, default=list)
     base_info: Mapped[Any] = mapped_column(JSON, nullable=False, default=dict)
     itinerary_json: Mapped[Any] = mapped_column(JSON, nullable=False, default=list)
